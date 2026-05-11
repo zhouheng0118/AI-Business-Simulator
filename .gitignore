@@ -44,3 +44,8 @@ logs/
 
 # Uploads (user-uploaded case files)
 uploads/
+
+# Design files
+Design.md
+# Case files
+/cases/
