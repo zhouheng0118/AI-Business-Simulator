@@ -292,3 +292,60 @@ def list_cases(published_only: bool = True) -> list:
     if published_only:
         query = query.eq("status", "published")
     return query.order("created_at", desc=True).execute().data
+
+
+def get_sessions_by_student(student_id: str) -> list:
+    return (
+        _get_client().table("sessions")
+        .select("id, case_id, status, interviewed_roles, started_at, submitted_at")
+        .eq("student_id", student_id)
+        .order("started_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def get_assignments_by_student(student_id: str) -> list:
+    return (
+        _get_client().table("case_assignments")
+        .select("case_id, due_at")
+        .eq("student_id", student_id)
+        .execute()
+        .data
+    )
+
+
+def get_case_stats(case_id: str) -> dict:
+    sessions = (
+        _get_client().table("sessions")
+        .select("id, status")
+        .eq("case_id", case_id)
+        .execute()
+        .data
+    )
+    submitted_ids = [
+        s["id"] for s in sessions if s["status"] in ("submitted", "scored")
+    ]
+
+    avg_score = None
+    if submitted_ids:
+        reports = (
+            _get_client().table("reports")
+            .select("total_score")
+            .in_("session_id", submitted_ids)
+            .execute()
+            .data
+        )
+        scores = [
+            float(r["total_score"])
+            for r in reports
+            if r.get("total_score") is not None
+        ]
+        if scores:
+            avg_score = round(sum(scores) / len(scores), 1)
+
+    return {
+        "sessions_total": len(sessions),
+        "sessions_submitted": len(submitted_ids),
+        "avg_score": avg_score,
+    }

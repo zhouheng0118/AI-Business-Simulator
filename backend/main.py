@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import cases, sessions
+from routers import assignments, cases, sessions
 
 app = FastAPI(title="CaseIQ Agent API")
 
@@ -11,6 +11,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(assignments.router)
 app.include_router(cases.router)
 app.include_router(sessions.router)
 
