@@ -109,6 +109,22 @@ Prompt selection rule:
 role_type prompt -> name/title prompt -> generic prompt
 ```
 
+Status: Implemented in code.
+
+Implementation notes:
+
+- New playbooks should include explicit `role_type`.
+- Existing playbooks remain compatible because the backend infers role type from `name`, `title`, and `focus_area`.
+- Routing first honors an exact display label match, then falls back to role type matching.
+- `City Official` and `Local Expert` both resolve to `local_regulatory`.
+- `CFO` resolves to `finance`; `Head of Operations` resolves to `operations`.
+
+Next validation:
+
+- Re-run EcoRide smoke test with `City Official`.
+- Re-run Spotify smoke test with `Local Expert`.
+- Test sending `role_name: "local_regulatory"` directly to confirm stable frontend routing can work.
+
 ## Phase 2: Boundary Hardening
 
 Add and keep adversarial tests for:
@@ -134,6 +150,7 @@ Improve evidence extraction so the board is useful for scoring:
 - Deduplicate by `source + key_info`.
 - Reject vague facts.
 - Keep concrete numbers, quotes, and decision risks.
+- Use a deterministic fallback when the model-based extractor fails.
 - Add confidence or evidence type later if scoring needs it.
 
 ## Phase 4: Case Quality

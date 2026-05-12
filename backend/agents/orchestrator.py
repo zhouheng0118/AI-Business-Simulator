@@ -1,18 +1,18 @@
 import json
 import re
 import database as db
+from agents.role_types import (
+    canonical_role_type,
+    infer_role_type,
+    normalize_label,
+    role_type_matches,
+)
 from agents.sub_agents import call_sub_agent
 from llm_client import FALLBACK_REPLY, complete
 
 _MIN_ROLES = 3
 _MIN_EVIDENCE = 3
-ROLE_ALIASES = {
-    "CEO": {"CEO"},
-    "CFO": {"CFO", "Chief Financial Officer"},
-    "Head of Operations": {"Head of Operations", "Operations Manager", "运营负责人"},
-    "Customer Rep": {"Customer Rep", "Customer Representative", "客户代表"},
-    "Local Expert": {"Local Expert", "Market Consultant", "本地专家"},
-}
+ROLE_ALIASES = {}
 
 
 async def _llm(prompt: str, max_tokens: int = 10) -> str:
@@ -67,7 +67,7 @@ async def _compute_allowed_info(
     locked_atoms = [
         a
         for a in info_atoms
-        if role["name"] in a.get("owner_roles", []) and a.get("access") == "locked"
+        if _info_atom_owned_by_role(a, role) and a.get("access") == "locked"
     ]
     for atom in locked_atoms:
         condition = atom.get("unlock_condition", "")
@@ -98,7 +98,10 @@ Return [] if nothing concrete was stated.
 Return ONLY valid JSON with no markdown or explanation."""
 
     raw = await _llm(prompt, max_tokens=600)
-    return _parse_evidence(raw, role_name)
+    evidence = _parse_evidence(raw, role_name)
+    if evidence:
+        return evidence
+    return _fallback_extract_evidence(reply, role_name)
 
 
 def _parse_evidence(raw: str, role_name: str) -> list:
@@ -153,6 +156,76 @@ def _is_valid_evidence(key_info: str, data: str, risk: str) -> bool:
     return bool(data or risk or re.search(r"\d", key_info))
 
 
+def _fallback_extract_evidence(reply: str, role_name: str) -> list:
+    """Extract a small amount of evidence without an LLM when extraction fails."""
+    if not reply.strip() or reply.strip() == FALLBACK_REPLY:
+        return []
+
+    evidence = []
+    seen = set()
+    for sentence in _evidence_candidate_sentences(reply):
+        data = _extract_data_fragment(sentence)
+        risk = _infer_risk_fragment(sentence)
+        if not _is_valid_evidence(sentence, data, risk):
+            continue
+
+        key = _normalize_text(sentence)
+        if key in seen:
+            continue
+        seen.add(key)
+        evidence.append(
+            {
+                "source": role_name,
+                "key_info": sentence,
+                "data": data,
+                "risk": risk,
+            }
+        )
+        if len(evidence) >= 3:
+            break
+
+    return evidence
+
+
+def _evidence_candidate_sentences(reply: str) -> list[str]:
+    """Return reply sentences likely to contain concrete decision evidence."""
+    normalized = re.sub(r"\s+", " ", reply.replace("\n", " ")).strip()
+    candidates = re.split(r"(?<=[.!?])\s+", normalized)
+    signal = re.compile(
+        r"(\$|%|\d|cost|revenue|runway|margin|break-even|tender|license|"
+        r"regulation|compliance|operator|fleet|vandalism|theft|attrition|"
+        r"charging|staffing|rebalancing)",
+        flags=re.IGNORECASE,
+    )
+    return [
+        sentence.strip(" -")
+        for sentence in candidates
+        if len(sentence.split()) >= 5 and signal.search(sentence)
+    ]
+
+
+def _extract_data_fragment(sentence: str) -> str:
+    """Extract the most useful numeric fragment from an evidence sentence."""
+    matches = re.findall(
+        r"(?:\$[\d,.]+[MBK]?|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:months?|years?|operators?|licenses?|rides?))",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    return ", ".join(match.rstrip(".,;:") for match in matches[:3])
+
+
+def _infer_risk_fragment(sentence: str) -> str:
+    """Infer a conservative risk label for fallback evidence."""
+    lower = sentence.lower()
+    if any(term in lower for term in ("cost", "revenue", "runway", "margin", "break-even")):
+        return "Financial viability risk."
+    if any(term in lower for term in ("tender", "license", "regulation", "compliance", "operator")):
+        return "Market access or compliance risk."
+    if any(term in lower for term in ("fleet", "vandalism", "theft", "attrition", "charging", "staffing", "rebalancing")):
+        return "Execution risk requiring operational mitigation."
+    return ""
+
+
 def _coerce_evidence_list(value: object) -> list:
     """Support both the current list contract and older single-item callers."""
     if isinstance(value, list):
@@ -173,6 +246,10 @@ def _is_info_sufficient(session: dict) -> bool:
 
 def _canonical_role_label(label: str) -> str:
     """Normalize a user-facing role label to the canonical role name."""
+    role_type = canonical_role_type(label)
+    if role_type:
+        return role_type
+
     normalized = label.strip().lower()
     for canonical, aliases in ROLE_ALIASES.items():
         alias_values = {canonical.lower(), *(alias.lower() for alias in aliases)}
@@ -187,13 +264,43 @@ def _role_matches(role: dict, target_role: str) -> bool:
     candidates = [
         _canonical_role_label(str(role.get("name", ""))),
         _canonical_role_label(str(role.get("title", ""))),
+        _canonical_role_label(str(role.get("role_type", ""))),
     ]
     return target.lower() in {candidate.lower() for candidate in candidates if candidate}
 
 
 def _find_role(roles: list, target_role: str) -> dict | None:
     """Find a role config in the playbook using English or Chinese labels."""
-    return next((role for role in roles if _role_matches(role, target_role)), None)
+    return next(
+        (role for role in roles if _role_label_matches(role, target_role)),
+        None,
+    ) or next((role for role in roles if _role_matches(role, target_role)), None)
+
+
+def _role_label_matches(role: dict, target_role: str) -> bool:
+    """Return whether a role matches by exact display label."""
+    target = normalize_label(target_role)
+    candidates = {
+        normalize_label(role.get("name")),
+        normalize_label(role.get("title")),
+        normalize_label(role.get("role_type")),
+    }
+    return bool(target and target in candidates)
+
+
+def _info_atom_owned_by_role(atom: dict, role: dict) -> bool:
+    """Return whether an info atom belongs to this role by name or role_type."""
+    owners = atom.get("owner_roles") or []
+    role_labels = {
+        _canonical_role_label(str(role.get("name", ""))),
+        _canonical_role_label(str(role.get("title", ""))),
+    }
+    inferred_type = infer_role_type(role)
+    if inferred_type:
+        role_labels.add(inferred_type)
+
+    owner_labels = {_canonical_role_label(str(owner)) for owner in owners}
+    return bool(role_labels & owner_labels)
 
 
 async def handle_student_message(
@@ -243,6 +350,7 @@ async def handle_student_message(
         "reply": reply,
         "evidence": evidence_items,
         "agent_name": role["name"],
+        "role_type": infer_role_type(role),
         "role_found": True,
     }
 

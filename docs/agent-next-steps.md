@@ -37,6 +37,7 @@ Completed:
   - Multiple evidence items per turn are supported.
   - Evidence is deduplicated by `source + key_info`.
   - Vague evidence is filtered before persistence.
+  - A deterministic fallback extracts concrete evidence when the model-based extractor fails.
 - Hardened information boundaries:
   - Locked fact text is no longer injected into sub-agent prompts before unlock.
   - Each stakeholder sees only its own conversation thread.
@@ -47,6 +48,12 @@ Completed:
   - Confirmed Supabase message and evidence persistence.
   - Confirmed `roles_visited` reached 3 roles.
   - Confirmed `info_sufficient: true`.
+- Added Agent Role Contract v1:
+  - Stable role types: `strategy`, `finance`, `operations`, `local_regulatory`, `customer_market`.
+  - Case-specific names such as `City Official` and `Local Expert` can map to the same `local_regulatory` role type.
+  - Routing supports exact display labels first, then stable role type inference.
+  - Prompt selection supports role type first, then role name/title.
+  - Existing playbooks without `role_type` remain compatible through inference.
 - Verified:
   - `./.venv/bin/python -m unittest discover tests`
   - `./.venv/bin/python -m compileall agents config.py database.py llm_client.py main.py routers tests`
@@ -85,9 +92,9 @@ This path is more important than professor upload, streaming, scoring, or UI pol
 
 ## 3. Immediate Next Step
 
-Add the Agent Role Contract v1.
+Re-run real smoke tests on both EcoRide and Spotify with Agent Role Contract v1.
 
-The product should expose five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both should map to the same product role type.
+The product now exposes five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both map to the same product role type.
 
 Proposed role types:
 
@@ -99,18 +106,21 @@ Proposed role types:
 | `local_regulatory` | Market structure, regulation, and local constraints | Local Expert, City Official, Regulator |
 | `customer_market` | Demand, willingness to pay, and user behavior | Customer Rep, Rider, User Representative |
 
-Implementation tasks:
+Completed implementation tasks:
 
-1. Add `role_type` to playbook role objects.
-2. Route by `role_type` first, then `name` and `title` as fallbacks.
-3. Select role prompts by `role_type` when available.
-4. Update seed/playbook data for Spotify and EcoRide.
-5. Add tests proving `City Official` and `Local Expert` both satisfy `local_regulatory`.
-6. Re-run smoke tests on both EcoRide and Spotify.
+1. Added `role_type` to seed playbook role objects.
+2. Added role type inference for older playbooks without `role_type`.
+3. Route by exact display label first, then `role_type`.
+4. Select prompts by `role_type` first, then `name` and `title`.
+5. Added tests proving `City Official` and `Local Expert` both satisfy `local_regulatory`.
+
+Remaining validation:
+
+1. Re-run smoke test on EcoRide using `City Official`.
+2. Re-run smoke test on Spotify using `Local Expert`.
+3. Confirm frontend can display role names while optionally passing stable `role_type`.
 
 ## 4. Smoke Test Runbook
-
-Start the backend:
 
 Start the backend:
 
@@ -346,19 +356,17 @@ I have the Agent core, Gemma 4 API, Supabase access, and local Python 3.12 envir
 The real /sessions/{id}/messages path has been validated on the EcoRide case:
 FastAPI -> Supabase -> Orchestrator -> Gemma 4 -> Evidence -> Supabase.
 
-Next I am adding Agent Role Contract v1 so the product can keep five stable stakeholder types while each case uses realistic role names such as City Official, Local Expert, Rider, or Customer Rep.
+Agent Role Contract v1 is implemented locally so the product can keep five stable stakeholder types while each case uses realistic role names such as City Official, Local Expert, Rider, or Customer Rep.
 ```
 
 ## 10. Next 24 Hours
 
 Priority order:
 
-1. Add `role_type` to the playbook role schema.
-2. Update orchestrator routing to prefer `role_type`.
-3. Update prompt selection to prefer `role_type`.
-4. Update Spotify and EcoRide seed/playbooks.
-5. Re-run smoke tests on both cases.
-6. Start semantic evidence deduplication after role contract is stable.
+1. Re-run EcoRide and Spotify smoke tests with role type routing.
+2. Confirm `/sessions/{id}/messages` works when `role_name` is a display name and when it is a stable `role_type`.
+3. Confirm role prompts remain natural for `City Official`, `Local Expert`, `Customer Rep`, and future case-specific names.
+4. Start semantic evidence deduplication after role contract is validated end-to-end.
 
 The definition of done for this stage:
 

@@ -12,6 +12,7 @@ from agents.orchestrator import (
     _find_role,
     handle_student_message,
 )
+from agents.role_types import canonical_role_type, infer_role_type
 from agents.sub_agents import _build_system_prompt, call_sub_agent
 
 
@@ -26,6 +27,7 @@ CFO_ROLE = {
 }
 
 LOCAL_EXPERT_ROLE = {
+    "role_type": "local_regulatory",
     "name": "Local Expert",
     "title": "Market Consultant",
     "persona": "Nuanced and locally informed",
@@ -33,6 +35,16 @@ LOCAL_EXPERT_ROLE = {
     "allowed_info": ["UPI payments make micro-subscriptions technically feasible"],
     "locked_info": ["Data localisation regulation could add $8M capex"],
     "unlock_conditions": "Student asks about regulation",
+}
+
+CITY_OFFICIAL_ROLE = {
+    "name": "City Official",
+    "title": "Paris Transport Commissioner",
+    "persona": "Policy-focused and strict about compliance",
+    "focus_area": "Regulations and tender criteria",
+    "allowed_info": ["The city is capping operators to exactly 3"],
+    "locked_info": ["Operators must hire full-time mechanics, no gig workers allowed"],
+    "unlock_conditions": "Student asks about tender requirements",
 }
 
 INFO_ATOMS = [
@@ -180,6 +192,52 @@ class BoundaryLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_find_role(roles, "运营负责人")["name"], "Head of Operations")
         self.assertEqual(_find_role(roles, "Operations Manager")["name"], "Head of Operations")
 
+    def test_role_type_inference_maps_case_specific_names(self) -> None:
+        """Case-specific display names should map to stable product role types."""
+        self.assertEqual(infer_role_type(CFO_ROLE), "finance")
+        self.assertEqual(infer_role_type(LOCAL_EXPERT_ROLE), "local_regulatory")
+        self.assertEqual(infer_role_type(CITY_OFFICIAL_ROLE), "local_regulatory")
+        self.assertEqual(canonical_role_type("Rider"), "customer_market")
+
+    def test_find_role_prefers_stable_role_type(self) -> None:
+        """Students can request a stakeholder type even when display names differ."""
+        roles = [CITY_OFFICIAL_ROLE]
+
+        self.assertEqual(_find_role(roles, "local_regulatory")["name"], "City Official")
+        self.assertEqual(_find_role(roles, "Local Expert")["name"], "City Official")
+        self.assertEqual(_find_role(roles, "City Official")["name"], "City Official")
+
+    async def test_local_expert_request_can_route_to_city_official(self) -> None:
+        """EcoRide-style regulatory roles should satisfy Local Expert requests."""
+        case_context = {
+            "case_id": "case-ecoride",
+            "session": {"interviewed_roles": []},
+            "playbook": {
+                "roles": [CITY_OFFICIAL_ROLE],
+                "info_atoms": [],
+            },
+        }
+
+        with (
+            patch(
+                "agents.orchestrator.call_sub_agent",
+                new=AsyncMock(return_value="The tender process is strict."),
+            ),
+            patch(
+                "agents.orchestrator._extract_evidence",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
+            result = await handle_student_message(
+                target_role="Local Expert",
+                user_message="What local rules matter?",
+                history=[],
+                case_context=case_context,
+            )
+
+        self.assertEqual(result["agent_name"], "City Official")
+        self.assertEqual(result["role_type"], "local_regulatory")
+
 
 class PromptLanguageTests(unittest.TestCase):
     def test_prompt_files_are_english_only(self) -> None:
@@ -201,6 +259,16 @@ class PromptLanguageTests(unittest.TestCase):
 
         self.assertIn("ARPU in India is $0.60 vs $5.20 globally", prompt)
         self.assertNotIn("Current India operation loses $18M annually", prompt)
+
+    def test_role_type_selects_prompt_template_for_case_specific_name(self) -> None:
+        """City Official should use the local/regulatory prompt via inferred role_type."""
+        prompt = _build_system_prompt(
+            CITY_OFFICIAL_ROLE,
+            allowed_info=["The city is capping operators to exactly 3"],
+        )
+
+        self.assertIn("You are City Official, Paris Transport Commissioner", prompt)
+        self.assertIn("local and regulatory stakeholder", prompt)
 
 
 class HistoryIsolationTests(unittest.IsolatedAsyncioTestCase):

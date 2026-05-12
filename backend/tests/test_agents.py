@@ -5,8 +5,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from agents.orchestrator import handle_student_message
-from agents.orchestrator import _parse_evidence
+from agents.orchestrator import (
+    _extract_evidence,
+    _fallback_extract_evidence,
+    _parse_evidence,
+    handle_student_message,
+)
 from llm_client import chat
 
 
@@ -79,9 +83,10 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             set(result.keys()),
-            {"reply", "evidence", "agent_name", "role_found"},
+            {"reply", "evidence", "agent_name", "role_type", "role_found"},
         )
         self.assertEqual(result["agent_name"], "CFO")
+        self.assertEqual(result["role_type"], "finance")
         self.assertTrue(result["role_found"])
         self.assertEqual(result["evidence"][0]["source"], "CFO")
 
@@ -103,7 +108,7 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["role_found"])
 
 
-class EvidenceParsingTests(unittest.TestCase):
+class EvidenceParsingTests(unittest.IsolatedAsyncioTestCase):
     def test_parse_evidence_returns_multiple_valid_items(self) -> None:
         """Extractor output should support multiple evidence items."""
         raw = """[
@@ -137,6 +142,30 @@ class EvidenceParsingTests(unittest.TestCase):
 
         self.assertEqual(len(evidence), 1)
         self.assertEqual(evidence[0]["key_info"], "ARPU in India is $0.60 versus $5.20 globally.")
+
+    def test_fallback_extract_evidence_captures_numeric_facts(self) -> None:
+        """Evidence extraction should have a deterministic backup path."""
+        reply = (
+            "The fleet has a 15% annual loss from vandalism and theft. "
+            "Each scooter costs $600 to manufacture. "
+            "Charging logistics will be difficult without local staffing."
+        )
+
+        evidence = _fallback_extract_evidence(reply, "Head of Operations")
+
+        self.assertGreaterEqual(len(evidence), 2)
+        self.assertEqual(evidence[0]["source"], "Head of Operations")
+        self.assertIn("15%", evidence[0]["data"])
+
+    async def test_extract_evidence_falls_back_when_llm_output_is_invalid(self) -> None:
+        """Invalid extractor JSON should not leave concrete replies with no evidence."""
+        reply = "Average revenue per ride is $3.50, creating margin pressure."
+
+        with patch("agents.orchestrator._llm", return_value="not json"):
+            evidence = await _extract_evidence(reply, "CFO")
+
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["data"], "$3.50")
 
 
 if __name__ == "__main__":

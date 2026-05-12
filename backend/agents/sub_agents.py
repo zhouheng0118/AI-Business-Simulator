@@ -1,11 +1,17 @@
 import re
 from pathlib import Path
 
+from agents.role_types import infer_role_type
 from llm_client import chat
 
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 ROLE_PROMPT_FILES = {
+    "strategy": "ceo_prompt.txt",
+    "finance": "cfo_prompt.txt",
+    "operations": "operations_prompt.txt",
+    "local_regulatory": "local_expert_prompt.txt",
+    "customer_market": "customer_prompt.txt",
     "ceo": "ceo_prompt.txt",
     "cfo": "cfo_prompt.txt",
     "chief financial officer": "cfo_prompt.txt",
@@ -28,9 +34,12 @@ def _prompt_file_for(role_name: str) -> Path:
 
 def _load_prompt_template(role: dict) -> str:
     """Load the best matching role prompt template from agents/prompts."""
+    role_type = infer_role_type(role)
     role_name = str(role.get("name", ""))
     title = str(role.get("title", ""))
-    for value in (role_name, title):
+    for value in (role_type, role_name, title):
+        if not value:
+            continue
         path = _prompt_file_for(value)
         if path.exists():
             return path.read_text(encoding="utf-8")

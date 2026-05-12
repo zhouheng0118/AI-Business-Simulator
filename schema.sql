@@ -27,8 +27,8 @@ CREATE TABLE playbooks (
   case_id        UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   version        INTEGER NOT NULL DEFAULT 1,
   roles          JSONB NOT NULL DEFAULT '[]',
-  -- [{name, title, persona, focus_area, allowed_info[], locked_info[], unlock_conditions}]
-  -- fixed 5 roles: CEO / CFO / Head of Operations / Customer Rep / Local Expert
+  -- [{role_type, name, title, persona, focus_area, allowed_info[], locked_info[], unlock_conditions}]
+  -- fixed 5 role types: strategy / finance / operations / customer_market / local_regulatory
   info_atoms     JSONB DEFAULT '[]',
   -- Step 2 info atom list (for professor audit)
   -- [{fact, owner_roles[], access('allowed'|'locked'), unlock_condition}]
