@@ -6,6 +6,12 @@ from agents.orchestrator import handle_message
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
+# Must be declared before /{session_id} to avoid route shadowing
+@router.get("/by-student/{student_id}")
+def get_sessions_by_student(student_id: str):
+    return db.get_sessions_by_student(student_id)
+
+
 class CreateSessionIn(BaseModel):
     case_id: str
     student_id: str
