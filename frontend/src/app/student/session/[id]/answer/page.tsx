@@ -1,419 +1,362 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { getCurrentUser, User } from "@/lib/auth";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import {
-    api,
-    ApiCaseDetail,
-    ApiCitedEvidence,
-    ApiEvidence,
-    ApiPlaybookQuestion,
-    ApiSession,
-    ApiSubmission,
+    api, ApiCaseDetail, ApiEvidence, ApiQuestion, ApiSession,
 } from "@/lib/api";
 
-type AnswerDraft = {
-    answer: string;
-    citedEvidence: number[];
+const DEFAULT_QUESTIONS: Record<string, ApiQuestion> = {
+    decision: {
+        id: "q_default",
+        type: "decision",
+        text: "Based on your stakeholder interviews, what is your recommendation? Justify it with specific evidence and address the key risks.",
+        rubric_dimensions: [
+            { name: "Evidence Use", weight: 25 },
+            { name: "Analytical Depth", weight: 25 },
+            { name: "Recommendation Quality", weight: 25 },
+            { name: "Risk Awareness", weight: 25 },
+        ],
+    },
+    analysis: {
+        id: "q_default",
+        type: "analysis",
+        text: "Analyze the key factors influencing this business situation. What are the most critical insights from your stakeholder interviews?",
+        rubric_dimensions: [
+            { name: "Evidence Use", weight: 25 },
+            { name: "Analytical Depth", weight: 25 },
+            { name: "Recommendation Quality", weight: 25 },
+            { name: "Risk Awareness", weight: 25 },
+        ],
+    },
+    reflection: {
+        id: "q_default",
+        type: "reflection",
+        text: "Reflect on the case. What were the most important insights from your interviews, and what would you advise the decision-maker to do?",
+        rubric_dimensions: [
+            { name: "Evidence Use", weight: 25 },
+            { name: "Analytical Depth", weight: 25 },
+            { name: "Recommendation Quality", weight: 25 },
+            { name: "Risk Awareness", weight: 25 },
+        ],
+    },
 };
 
-const TYPE_STYLE: Record<string, { label: string; bg: string; color: string }> = {
-    decision:   { label: "Decision", bg: "#fff3e0", color: "#b75000" },
-    analysis:   { label: "Analysis", bg: "#eef4ff", color: "#0044a8" },
-    reflection: { label: "Reflection", bg: "#f0fdf4", color: "#166534" },
+const CATEGORY_MAP: Record<string, { label: string; bg: string; color: string }> = {
+    CEO:                     { label: "Strategic", bg: "#eef4ff", color: "#0044a8" },
+    CFO:                     { label: "Financial", bg: "#edfaf3", color: "#166534" },
+    "Operations Director":   { label: "Operational", bg: "#fff7ed", color: "#9a3412" },
+    "Customer Representative": { label: "Market", bg: "#f5f0ff", color: "#6b21a8" },
+    "Local Expert":          { label: "Regulatory", bg: "#edfafa", color: "#0e7490" },
 };
 
-const shell: CSSProperties = {
-    minHeight: "100vh",
-    background: "#f5f5f7",
-    color: "#1d1d1f",
-    fontFamily: "SF Pro Text, system-ui",
-};
-
-function typeStyle(type: string) {
-    return TYPE_STYLE[type] ?? { label: type, bg: "#f5f5f7", color: "#7a7a7a" };
+function evidenceCategory(source: string) {
+    return CATEGORY_MAP[source] ?? { label: source, bg: "#f5f5f7", color: "#7a7a7a" };
 }
 
-function citedEvidencePayload(evidence: ApiEvidence[], indexes: number[]): ApiCitedEvidence[] {
-    return indexes
-        .map((index) => {
-            const item = evidence[index];
-            return item ? { ...item, evidence_index: index } : null;
-        })
-        .filter((item): item is ApiCitedEvidence => item !== null);
+function wordCount(text: string) {
+    return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-function initialDrafts(
-    questions: ApiPlaybookQuestion[],
-    submissions: ApiSubmission[],
-): Record<string, AnswerDraft> {
-    const byQuestion = new Map(submissions.map((submission) => [submission.question_id, submission]));
-    return Object.fromEntries(
-        questions.map((question) => {
-            const existing = byQuestion.get(question.id);
-            return [
-                question.id,
-                {
-                    answer: existing?.answer ?? "",
-                    citedEvidence: (existing?.cited_evidence ?? []).map((item) => item.evidence_index),
-                },
-            ];
-        }),
-    );
-}
 
-function TopBar({ user, caseTitle, onBack, onInterview }: {
-    user: User;
-    caseTitle: string;
+function TopBar({
+    caseName, submitting, canSubmit, onBack, onSubmit,
+}: {
+    caseName: string;
+    submitting: boolean;
+    canSubmit: boolean;
     onBack: () => void;
-    onInterview: () => void;
+    onSubmit: () => void;
 }) {
+    const [backHov, setBackHov] = useState(false);
+    const [submitHov, setSubmitHov] = useState(false);
+
     return (
-        <div style={{ height: 52, background: "#ffffff", borderBottom: "1px solid #e0e0e0", padding: "0 24px", display: "flex", alignItems: "center", gap: 14, position: "sticky", top: 0, zIndex: 10 }}>
-            <button onClick={onBack} style={navButtonStyle}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-                Case
-            </button>
-            <button onClick={onInterview} style={navButtonStyle}>
+        <div style={{ height: 52, background: "#ffffff", borderBottom: "1px solid #e0e0e0", display: "flex", alignItems: "center", padding: "0 20px", gap: 16, flexShrink: 0, zIndex: 10 }}>
+            <button
+                onClick={onBack}
+                onMouseEnter={() => setBackHov(true)}
+                onMouseLeave={() => setBackHov(false)}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 6, border: "1px solid #e0e0e0", background: backHov ? "#f5f5f7" : "#fff", color: "#1d1d1f", fontSize: 11, fontWeight: 500, cursor: "pointer", fontFamily: "SF Pro Text, system-ui", transition: "background 0.12s", flexShrink: 0 }}
+            >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Interview
             </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{caseTitle}</div>
-                <div style={{ fontSize: 11, color: "#7a7a7a", marginTop: 1 }}>Answer submission</div>
+
+            <span style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 14, fontWeight: 600, color: "#1d1d1f", letterSpacing: "-0.14px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {caseName}
+            </span>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "#7a7a7a" }}>Step 2 of 2 — Submit Your Analysis</span>
+                <button
+                    onClick={onSubmit}
+                    disabled={submitting || !canSubmit}
+                    onMouseEnter={() => setSubmitHov(true)}
+                    onMouseLeave={() => setSubmitHov(false)}
+                    style={{ padding: "6px 16px", borderRadius: 8, border: "none", background: submitting || !canSubmit ? "#b0c8f0" : submitHov ? "#0071e3" : "#0066cc", color: "#fff", fontSize: 12, fontWeight: 600, cursor: submitting || !canSubmit ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", transition: "background 0.12s", display: "flex", alignItems: "center", gap: 6 }}
+                >
+                    {submitting ? (
+                        <>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" /><path d="M21 12a9 9 0 00-9-9" /></svg>
+                            Scoring…
+                        </>
+                    ) : "Submit Answer"}
+                </button>
             </div>
-            <span style={{ fontSize: 12, color: "#7a7a7a" }}>{user.fullName}</span>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#0066cc", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {user.fullName.charAt(0).toUpperCase()}
-            </div>
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
     );
 }
 
-const navButtonStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "5px 10px",
-    borderRadius: 7,
-    border: "1px solid #e0e0e0",
-    background: "#ffffff",
-    color: "#1d1d1f",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "SF Pro Text, system-ui",
-};
+function EvidenceCard({ item }: { item: ApiEvidence }) {
+    const cat = evidenceCategory(item.source);
+    return (
+        <div style={{ background: "#ffffff", border: "1px solid #e8e8ed", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: cat.bg, color: cat.color, letterSpacing: "0.02em" }}>{cat.label}</span>
+                <span style={{ fontSize: 10, color: "#7a7a7a" }}>{item.source}</span>
+            </div>
+            <p style={{ fontSize: 12, color: "#1d1d1f", margin: "0 0 4px", lineHeight: 1.4, fontWeight: 500 }}>{item.key_info}</p>
+            {item.data && <p style={{ fontSize: 11, color: "#5a5a5f", margin: 0, lineHeight: 1.3 }}>{item.data}</p>}
+        </div>
+    );
+}
 
-function EvidenceCard({ item, index, selected, onToggle }: {
-    item: ApiEvidence;
+function QuestionCard({
+    question, index, value, onChange,
+}: {
+    question: ApiQuestion;
     index: number;
-    selected: boolean;
-    onToggle: () => void;
+    value: string;
+    onChange: (v: string) => void;
 }) {
-    return (
-        <button
-            onClick={onToggle}
-            style={{
-                width: "100%",
-                textAlign: "left",
-                border: selected ? "1.5px solid #0066cc" : "1px solid #e0e0e0",
-                background: selected ? "#eef4ff" : "#ffffff",
-                borderRadius: 8,
-                padding: "10px 11px",
-                cursor: "pointer",
-                fontFamily: "SF Pro Text, system-ui",
-            }}
-        >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 5 }}>
-                <span style={{ fontSize: 10, color: "#7a7a7a", fontWeight: 600 }}>{index + 1}. {item.source}</span>
-                <span style={{ fontSize: 10, color: selected ? "#0066cc" : "#b0b0b0", fontWeight: 700 }}>{selected ? "Cited" : "Cite"}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#1d1d1f", lineHeight: 1.45 }}>{item.key_info}</div>
-            {item.data && <div style={{ fontSize: 11, color: "#5f6368", marginTop: 4 }}>Data: {item.data}</div>}
-            {item.risk && <div style={{ fontSize: 11, color: "#9a3412", marginTop: 2 }}>Risk: {item.risk}</div>}
-        </button>
-    );
-}
+    const wc = wordCount(value);
+    const minWords = 80;
+    const tooShort = wc < minWords;
 
-function QuestionEditor({ question, draft, evidence, disabled, onAnswer, onToggleEvidence }: {
-    question: ApiPlaybookQuestion;
-    draft: AnswerDraft;
-    evidence: ApiEvidence[];
-    disabled: boolean;
-    onAnswer: (value: string) => void;
-    onToggleEvidence: (index: number) => void;
-}) {
-    const cfg = typeStyle(question.type);
-    const words = draft.answer.trim().split(/\s+/).filter(Boolean).length;
+    const TYPE_LABEL: Record<string, string> = { decision: "Decision", analysis: "Analysis", reflection: "Reflection" };
+    const TYPE_COLOR: Record<string, { bg: string; color: string }> = {
+        decision:   { bg: "#fff3e0", color: "#b75000" },
+        analysis:   { bg: "#eef4ff", color: "#0044a8" },
+        reflection: { bg: "#f0fdf4", color: "#166534" },
+    };
+    const tc = TYPE_COLOR[question.type] ?? { bg: "#f5f5f7", color: "#7a7a7a" };
 
     return (
-        <section style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 10, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                <span style={{ fontSize: 11, color: "#7a7a7a" }}>{words} words</span>
-            </div>
-            <h2 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 17, lineHeight: 1.35, margin: "0 0 12px", letterSpacing: "-0.2px" }}>
-                {question.text}
-            </h2>
-            <textarea
-                value={draft.answer}
-                onChange={(event) => onAnswer(event.target.value)}
-                disabled={disabled}
-                rows={7}
-                placeholder="Write a clear recommendation, explain the reasoning, and connect it to the evidence you gathered."
-                style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    border: "1px solid #d8d8dc",
-                    borderRadius: 8,
-                    padding: "11px 12px",
-                    resize: "vertical",
-                    fontFamily: "SF Pro Text, system-ui",
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: "#1d1d1f",
-                    outline: "none",
-                    background: disabled ? "#f9f9fb" : "#ffffff",
-                }}
-            />
-            <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
-                    Cite Evidence
+        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#0066cc", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {index + 1}
                 </div>
-                {evidence.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "#b0b0b0", border: "1px dashed #d0d0d0", borderRadius: 8, padding: 12 }}>
-                        No evidence has been collected yet.
-                    </div>
-                ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        {evidence.map((item, index) => (
-                            <EvidenceCard
-                                key={`${item.source}-${item.key_info}-${index}`}
-                                item={item}
-                                index={index}
-                                selected={draft.citedEvidence.includes(index)}
-                                onToggle={() => onToggleEvidence(index)}
-                            />
-                        ))}
-                    </div>
-                )}
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: tc.bg, color: tc.color, letterSpacing: "0.02em" }}>
+                    {TYPE_LABEL[question.type] ?? question.type}
+                </span>
             </div>
-        </section>
-    );
-}
 
-function SubmissionSummary({ questions, drafts }: {
-    questions: ApiPlaybookQuestion[];
-    drafts: Record<string, AnswerDraft>;
-}) {
-    const answered = questions.filter((question) => drafts[question.id]?.answer.trim()).length;
-    const cited = questions.filter((question) => (drafts[question.id]?.citedEvidence.length ?? 0) > 0).length;
+            <p style={{ fontSize: 14, fontWeight: 600, color: "#1d1d1f", margin: "0 0 16px", lineHeight: 1.5, letterSpacing: "-0.1px" }}>
+                {question.text}
+            </p>
 
-    return (
-        <aside style={{ position: "sticky", top: 76, alignSelf: "flex-start", background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 10, padding: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
-                Submission Check
+            <div style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                    {question.rubric_dimensions.map((d) => (
+                        <span key={d.name} style={{ fontSize: 10, color: "#7a7a7a", border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "2px 8px" }}>
+                            {d.name} ({d.weight} pts)
+                        </span>
+                    ))}
+                </div>
             </div>
-            <Metric label="Answers" value={`${answered}/${questions.length}`} good={answered === questions.length} />
-            <Metric label="Citations" value={`${cited}/${questions.length}`} good={cited === questions.length} />
-            <div style={{ marginTop: 14, fontSize: 12, lineHeight: 1.55, color: "#5f6368" }}>
-                Every answer should cite at least one evidence item. This is the product contract for process-based grading.
-            </div>
-        </aside>
-    );
-}
 
-function Metric({ label, value, good }: { label: string; value: string; good: boolean }) {
-    return (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f0f0f0", padding: "8px 0" }}>
-            <span style={{ fontSize: 12, color: "#7a7a7a" }}>{label}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: good ? "#166534" : "#b75000" }}>{value}</span>
+            <textarea
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Type your answer here. Reference specific evidence from your interviews and address the key risks…"
+                rows={12}
+                style={{ width: "100%", boxSizing: "border-box", border: "1px solid #d0d0d8", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#1d1d1f", lineHeight: 1.6, fontFamily: "SF Pro Text, system-ui", resize: "vertical", outline: "none", background: "#fafafa", transition: "border-color 0.15s" }}
+                onFocus={(e) => { e.target.style.borderColor = "#0066cc"; e.target.style.background = "#ffffff"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#d0d0d8"; e.target.style.background = "#fafafa"; }}
+            />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <span style={{ fontSize: 11, color: tooShort ? "#9a3412" : "#34c759" }}>
+                    {wc} words {tooShort ? `(aim for ${minWords}+)` : "✓"}
+                </span>
+                <span style={{ fontSize: 11, color: "#7a7a7a" }}>
+                    Tip: cite specific data points (e.g. "$2.5M cost", "3-month runway")
+                </span>
+            </div>
         </div>
     );
 }
+
 
 export default function AnswerPage() {
     const router = useRouter();
     const params = useParams();
     const sessionId = params.id as string;
 
-    const [user, setUser] = useState<User | null>(null);
-    const [session, setSession] = useState<ApiSession | null>(null);
-    const [detail, setDetail] = useState<ApiCaseDetail | null>(null);
+    const [session, setSession]   = useState<ApiSession | null>(null);
+    const [detail, setDetail]     = useState<ApiCaseDetail | null>(null);
     const [evidence, setEvidence] = useState<ApiEvidence[]>([]);
-    const [drafts, setDrafts] = useState<Record<string, AnswerDraft>>({});
-    const [loading, setLoading] = useState(true);
+    const [answers, setAnswers]   = useState<Record<string, string>>({});
+    const [loading, setLoading]   = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError]       = useState<string | null>(null);
 
     useEffect(() => {
-        const currentUser = getCurrentUser();
-        if (!currentUser) { router.push("/login"); return; }
-        if (currentUser.role !== "student") { router.push("/dashboard/professor"); return; }
-        setUser(currentUser);
+        const u = getCurrentUser();
+        if (!u) { router.push("/login"); return; }
 
-        Promise.all([
-            api.sessions.get(sessionId),
-            api.sessions.getEvidence(sessionId),
-            api.sessions.getSubmissions(sessionId),
-        ])
-            .then(async ([sessionData, evidenceData, submissionData]) => {
-                setSession(sessionData);
-                setEvidence(evidenceData.evidence_board);
-                const caseDetail = await api.cases.get(sessionData.case_id);
-                setDetail(caseDetail);
-                const questions = caseDetail.playbook?.questions ?? [];
-                setDrafts(initialDrafts(questions, submissionData.submissions));
+        api.sessions.get(sessionId)
+            .then((sess) => {
+                if (sess.status === "scored" || sess.status === "submitted") {
+                    router.replace(`/student/session/${sessionId}/report`);
+                    return null;
+                }
+                if (sess.status === "in_progress") {
+                    router.replace(`/student/session/${sessionId}`);
+                    return null;
+                }
+                setSession(sess);
+                return Promise.all([
+                    api.cases.get(sess.case_id),
+                    api.sessions.getEvidence(sessionId),
+                ]);
             })
-            .catch(() => setError("Could not load answer workspace. Make sure the backend is running."))
+            .then((results) => {
+                if (!results) return;
+                const [caseDetail, evidData] = results;
+                setDetail(caseDetail);
+                setEvidence(evidData.evidence_board);
+
+                const qs = getQuestions(caseDetail);
+                const init: Record<string, string> = {};
+                qs.forEach((q) => { init[q.id] = ""; });
+                setAnswers(init);
+            })
+            .catch(() => setError("Could not load case. Make sure the backend is running."))
             .finally(() => setLoading(false));
-    }, [router, sessionId]);
+    }, [sessionId, router]);
 
-    const questions = useMemo(
-        () => detail?.playbook?.questions ?? [],
-        [detail],
-    );
-    const submitted = session?.status === "submitted" || session?.status === "scored";
-    const readyToSubmit = questions.length > 0 && questions.every((question) => {
-        const draft = drafts[question.id];
-        return draft?.answer.trim() && draft.citedEvidence.length > 0;
-    });
-
-    function updateAnswer(questionId: string, value: string) {
-        setDrafts((prev) => ({
-            ...prev,
-            [questionId]: {
-                answer: value,
-                citedEvidence: prev[questionId]?.citedEvidence ?? [],
-            },
-        }));
+    function getQuestions(d: ApiCaseDetail): ApiQuestion[] {
+        const qs = d.playbook?.questions;
+        if (qs && qs.length > 0) return qs;
+        const caseType = d.case?.case_type ?? "decision";
+        return [DEFAULT_QUESTIONS[caseType] ?? DEFAULT_QUESTIONS.decision];
     }
 
-    function toggleEvidence(questionId: string, index: number) {
-        setDrafts((prev) => {
-            const draft = prev[questionId] ?? { answer: "", citedEvidence: [] };
-            const selected = draft.citedEvidence.includes(index);
-            return {
-                ...prev,
-                [questionId]: {
-                    ...draft,
-                    citedEvidence: selected
-                        ? draft.citedEvidence.filter((item) => item !== index)
-                        : [...draft.citedEvidence, index].sort((a, b) => a - b),
-                },
-            };
-        });
-    }
+    const questions = detail ? getQuestions(detail) : [];
 
-    async function handleSubmit() {
-        if (!readyToSubmit || submitted) return;
+    const canSubmit = questions.length > 0 && questions.every((q) => wordCount(answers[q.id] ?? "") >= 30);
+
+    const handleSubmit = useCallback(async () => {
+        if (!canSubmit || submitting) return;
         setSubmitting(true);
-        setError(null);
-
-        const answers: ApiSubmission[] = questions.map((question) => {
-            const draft = drafts[question.id];
-            return {
-                question_id: question.id,
-                question_type: question.type,
-                answer: draft.answer.trim(),
-                cited_evidence: citedEvidencePayload(evidence, draft.citedEvidence),
-            };
-        });
-
         try {
-            await api.sessions.submitAnswers(sessionId, answers);
-            const updatedSession = await api.sessions.get(sessionId);
-            setSession(updatedSession);
+            await api.sessions.submit(
+                sessionId,
+                questions.map((q) => ({
+                    question_id: q.id,
+                    answer: answers[q.id] ?? "",
+                    cited_evidence: [],
+                })),
+            );
+            router.push(`/student/session/${sessionId}/report`);
         } catch {
-            setError("Could not submit answers. Check that every question has an answer and citations.");
-        } finally {
+            setError("Submission failed. Please try again.");
             setSubmitting(false);
         }
+    }, [canSubmit, submitting, sessionId, questions, answers, router]);
+
+    const caseName = detail?.case?.title ?? "Business Case";
+
+    if (loading) {
+        return (
+            <div style={{ minHeight: "100vh", background: "#f5f5f7", fontFamily: "SF Pro Text, system-ui", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 480 }}>
+                    {[80, 200, 200].map((h, i) => (
+                        <div key={i} style={{ height: h, borderRadius: 10, background: "#e0e0e0", animation: "pulse 1.5s ease-in-out infinite" }} />
+                    ))}
+                    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+                </div>
+            </div>
+        );
     }
 
-    if (!user) return null;
-
-    const caseTitle = detail?.case.title ?? "Loading...";
-    const caseId = session?.case_id ?? detail?.case.id ?? "";
-
     return (
-        <div style={shell}>
+        <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#f5f5f7", fontFamily: "SF Pro Text, system-ui", overflow: "hidden" }}>
             <TopBar
-                user={user}
-                caseTitle={caseTitle}
-                onBack={() => router.push(caseId ? `/student/case/${caseId}` : "/dashboard/student")}
-                onInterview={() => router.push(`/student/session/${sessionId}`)}
+                caseName={caseName}
+                submitting={submitting}
+                canSubmit={canSubmit}
+                onBack={() => router.push(`/student/session/${sessionId}`)}
+                onSubmit={handleSubmit}
             />
 
-            <main style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 24px 48px" }}>
-                {error && (
-                    <div style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "10px 13px", fontSize: 13, marginBottom: 14 }}>
-                        {error}
-                    </div>
-                )}
+            {error && (
+                <div style={{ background: "#fff5f5", border: "1px solid #fecaca", padding: "10px 20px", fontSize: 13, color: "#991b1b", flexShrink: 0 }}>
+                    {error}
+                </div>
+            )}
 
-                {loading ? (
-                    <div style={{ minHeight: 420, display: "flex", alignItems: "center", justifyContent: "center", color: "#7a7a7a", fontSize: 13 }}>
-                        Loading answer workspace...
-                    </div>
-                ) : (
-                    <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18 }}>
-                            <div>
-                                <h1 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 24, margin: "0 0 5px", letterSpacing: "-0.3px" }}>
-                                    Final Recommendation
-                                </h1>
-                                <p style={{ fontSize: 13, lineHeight: 1.55, color: "#5f6368", margin: 0, maxWidth: 720 }}>
-                                    Answer each playbook question and cite the evidence that supports your reasoning.
-                                </p>
-                            </div>
+            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                {/* Questions area */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px 24px 24px" }}>
+                    <div style={{ maxWidth: 700, margin: "0 auto" }}>
+                        <div style={{ marginBottom: 20 }}>
+                            <h2 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 18, fontWeight: 700, color: "#1d1d1f", margin: "0 0 4px", letterSpacing: "-0.3px" }}>
+                                Submit Your Analysis
+                            </h2>
+                            <p style={{ fontSize: 12, color: "#7a7a7a", margin: 0 }}>
+                                Use the evidence you collected from your interviews to write a well-supported answer.
+                            </p>
+                        </div>
+
+                        {questions.map((q, i) => (
+                            <QuestionCard
+                                key={q.id}
+                                question={q}
+                                index={i}
+                                value={answers[q.id] ?? ""}
+                                onChange={(v) => setAnswers((prev) => ({ ...prev, [q.id]: v }))}
+                            />
+                        ))}
+
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!readyToSubmit || submitting || submitted}
-                                style={{
-                                    padding: "10px 18px",
-                                    border: "none",
-                                    borderRadius: 8,
-                                    background: submitted ? "#34c759" : readyToSubmit && !submitting ? "#0066cc" : "#d0d0d0",
-                                    color: "#ffffff",
-                                    fontSize: 13,
-                                    fontWeight: 700,
-                                    cursor: readyToSubmit && !submitting && !submitted ? "pointer" : "not-allowed",
-                                    fontFamily: "SF Pro Text, system-ui",
-                                    flexShrink: 0,
-                                }}
+                                disabled={submitting || !canSubmit}
+                                style={{ padding: "10px 28px", borderRadius: 10, border: "none", background: submitting || !canSubmit ? "#b0c8f0" : "#0066cc", color: "#fff", fontSize: 14, fontWeight: 600, cursor: submitting || !canSubmit ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", letterSpacing: "-0.1px" }}
                             >
-                                {submitted ? "Submitted" : submitting ? "Submitting..." : "Submit Answers"}
+                                {submitting ? "Scoring your answer…" : "Submit & See Report"}
                             </button>
                         </div>
+                    </div>
+                </div>
 
-                        {submitted && (
-                            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 8, padding: "10px 13px", fontSize: 13, marginBottom: 14 }}>
-                                Your answers have been submitted. Scoring and debrief reports will be added in the next product step.
-                            </div>
-                        )}
+                {/* Evidence reference panel */}
+                <div style={{ width: 272, borderLeft: "1px solid #e0e0e0", background: "#fafafa", overflowY: "auto", padding: 16, flexShrink: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                        Your Evidence ({evidence.length})
+                    </div>
 
-                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px", gap: 16 }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                                {questions.map((question) => (
-                                    <QuestionEditor
-                                        key={question.id}
-                                        question={question}
-                                        draft={drafts[question.id] ?? { answer: "", citedEvidence: [] }}
-                                        evidence={evidence}
-                                        disabled={submitted}
-                                        onAnswer={(value) => updateAnswer(question.id, value)}
-                                        onToggleEvidence={(index) => toggleEvidence(question.id, index)}
-                                    />
-                                ))}
-                            </div>
-                            <SubmissionSummary questions={questions} drafts={drafts} />
+                    {evidence.length === 0 ? (
+                        <div style={{ fontSize: 12, color: "#a0a0a8", textAlign: "center", paddingTop: 24 }}>
+                            No evidence collected.
                         </div>
-                    </>
-                )}
-            </main>
+                    ) : (
+                        evidence.map((item, i) => <EvidenceCard key={i} item={item} />)
+                    )}
+
+                    <div style={{ marginTop: 16, padding: "10px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8 }}>
+                        <p style={{ fontSize: 11, color: "#92400e", margin: 0, lineHeight: 1.5 }}>
+                            Reference the specific data, quotes, and risks above in your answer to score higher on Evidence Use.
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

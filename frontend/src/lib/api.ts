@@ -30,7 +30,6 @@ export interface ApiCase {
 }
 
 export interface ApiPlaybookRole {
-    role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
     persona?: string;
@@ -39,19 +38,12 @@ export interface ApiPlaybookRole {
     locked_info?: string[];
 }
 
-export interface ApiPlaybookQuestion {
-    id: string;
-    type: "decision" | "analysis" | "reflection" | string;
-    text: string;
-    rubric_dimensions?: { name: string; weight: number }[];
-}
-
 export interface ApiPlaybook {
     id: string;
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
-    questions: ApiPlaybookQuestion[];
+    questions: ApiQuestion[];
     review_status: string;
 }
 
@@ -64,7 +56,6 @@ export interface ApiSession {
     id: string;
     case_id: string;
     status: "in_progress" | "answering" | "submitted" | "scored";
-    evidence_board?: ApiEvidence[];
     interviewed_roles: string[];
     started_at: string;
     submitted_at: string | null;
@@ -86,21 +77,6 @@ export interface ApiEvidence {
     risk: string;
 }
 
-export interface ApiCitedEvidence extends ApiEvidence {
-    evidence_index: number;
-}
-
-export interface ApiSubmission {
-    id?: string;
-    session_id?: string;
-    question_id: string;
-    question_type: string;
-    answer: string;
-    cited_evidence: ApiCitedEvidence[];
-    alternatives_excluded?: string | null;
-    created_at?: string;
-}
-
 export interface ApiSendMessageResponse {
     reply: string;
     new_evidence: ApiEvidence[];
@@ -112,6 +88,54 @@ export interface ApiSendMessageResponse {
 export interface ApiAssignment {
     case_id: string;
     due_at: string | null;
+}
+
+export interface ApiQuestion {
+    id: string;
+    type: "decision" | "analysis" | "reflection";
+    text: string;
+    rubric_dimensions: { name: string; weight: number }[];
+}
+
+export interface ApiSubmitAnswer {
+    question_id: string;
+    answer: string;
+    cited_evidence?: ApiEvidence[];
+}
+
+export interface ApiDimensionScore {
+    name: string;
+    score: number;
+    max_score: number;
+    comment: string;
+}
+
+export interface ApiQuestionScore {
+    question_id: string;
+    question_type: string;
+    dimension_scores: ApiDimensionScore[];
+    question_total: number;
+    question_max: number;
+    feedback: string;
+    strengths: string[];
+    improvements: string[];
+}
+
+export interface ApiReport {
+    id: string;
+    session_id: string;
+    scores: ApiQuestionScore[];
+    total_score: number;
+    total_max: number;
+    interview_path: {
+        roles_visited: string[];
+        roles_missed: string[];
+        key_info_captured: string[];
+        key_info_missed: string[];
+    };
+    blind_spots: { type: string; description: string }[];
+    overall_comment: string;
+    generated_at: string;
 }
 
 export interface ApiCaseStats {
@@ -146,10 +170,10 @@ export const api = {
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
         proceed: (sessionId: string) =>
             post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
-        getSubmissions: (sessionId: string) =>
-            get<{ submissions: ApiSubmission[] }>(`/sessions/${sessionId}/submissions`),
-        submitAnswers: (sessionId: string, answers: ApiSubmission[]) =>
-            post<{ status: string; submissions: ApiSubmission[] }>(`/sessions/${sessionId}/submissions`, { answers }),
+        submit: (sessionId: string, answers: ApiSubmitAnswer[]) =>
+            post<ApiReport>(`/sessions/${sessionId}/submit`, { answers }),
+        getReport: (sessionId: string) =>
+            get<ApiReport>(`/sessions/${sessionId}/report`),
     },
     assignments: {
         byStudent: (studentId: string) =>
