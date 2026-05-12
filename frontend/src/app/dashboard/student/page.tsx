@@ -156,6 +156,7 @@ export default function StudentDashboard() {
 }
 
 function CaseCard({ data }: { data: DisplayCase }) {
+    const router = useRouter();
     const [hovered, setHovered] = useState(false);
 
     const statusCfg: Record<CaseStatus, { label: string; bg: string; color: string }> = {
@@ -173,6 +174,7 @@ function CaseCard({ data }: { data: DisplayCase }) {
 
     return (
         <div
+            onClick={() => router.push(`/student/case/${data.id}`)}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: 20, cursor: "pointer", boxShadow: hovered ? "0 4px 16px rgba(0,0,0,0.08)" : "0 1px 3px rgba(0,0,0,0.05)", transform: hovered ? "translateY(-1px)" : "none", transition: "box-shadow 0.18s, transform 0.18s" }}

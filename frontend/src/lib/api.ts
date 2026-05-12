@@ -6,6 +6,16 @@ async function get<T>(path: string): Promise<T> {
     return res.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+    return res.json() as Promise<T>;
+}
+
 // Shapes returned by the backend
 
 export interface ApiCase {
@@ -17,6 +27,29 @@ export interface ApiCase {
     status: "draft" | "published";
     teaching_goals: string[];
     created_at: string;
+}
+
+export interface ApiPlaybookRole {
+    name: string;
+    title: string;
+    persona?: string;
+    focus_area: string;
+    allowed_info?: string[];
+    locked_info?: string[];
+}
+
+export interface ApiPlaybook {
+    id: string;
+    case_id: string;
+    version: number;
+    roles: ApiPlaybookRole[];
+    questions: unknown[];
+    review_status: string;
+}
+
+export interface ApiCaseDetail {
+    case: ApiCase;
+    playbook: ApiPlaybook | null;
 }
 
 export interface ApiSession {
@@ -45,12 +78,16 @@ export const api = {
     cases: {
         list: (publishedOnly = true) =>
             get<ApiCase[]>(`/cases?published_only=${publishedOnly}`),
+        get: (caseId: string) =>
+            get<ApiCaseDetail>(`/cases/${caseId}`),
         stats: (caseId: string) =>
             get<ApiCaseStats>(`/cases/${caseId}/stats`),
     },
     sessions: {
         byStudent: (studentId: string) =>
             get<ApiSession[]>(`/sessions/by-student/${studentId}`),
+        create: (caseId: string, studentId: string) =>
+            post<ApiSession>("/sessions", { case_id: caseId, student_id: studentId }),
     },
     assignments: {
         byStudent: (studentId: string) =>
