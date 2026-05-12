@@ -31,6 +31,57 @@ _STOPWORDS = {
     "to",
     "with",
 }
+_HIGH_SIGNAL_TERMS = {
+    "arpu",
+    "attrition",
+    "breakeven",
+    "break-even",
+    "burn",
+    "capex",
+    "cash",
+    "charging",
+    "compliance",
+    "cost",
+    "costs",
+    "fleet",
+    "license",
+    "licensing",
+    "margin",
+    "margins",
+    "operator",
+    "operators",
+    "regulation",
+    "regulatory",
+    "revenue",
+    "runway",
+    "tender",
+    "vandalism",
+}
+_CONCEPT_TERMS = {
+    "liquidity": {
+        "burn",
+        "capital",
+        "cash",
+        "funding",
+        "liquidity",
+        "reserves",
+        "runway",
+        "war",
+    },
+    "revenue": {"arpu", "revenue", "ride", "rides", "unit"},
+    "regulatory_access": {
+        "compliance",
+        "license",
+        "licenses",
+        "operator",
+        "operators",
+        "regulation",
+        "regulatory",
+        "tender",
+    },
+    "fleet_attrition": {"attrition", "fleet", "theft", "vandalism"},
+    "operations": {"charging", "maintenance", "rebalancing", "staffing"},
+}
 
 
 def _get_client() -> Any:
@@ -147,7 +198,7 @@ def _is_semantic_duplicate(existing: dict, candidate: dict) -> bool:
 
     existing_numbers = _evidence_numbers(existing)
     candidate_numbers = _evidence_numbers(candidate)
-    if existing_numbers and candidate_numbers and existing_numbers != candidate_numbers:
+    if existing_numbers and candidate_numbers and not (existing_numbers & candidate_numbers):
         return False
 
     existing_terms = _evidence_terms(existing)
@@ -156,8 +207,33 @@ def _is_semantic_duplicate(existing: dict, candidate: dict) -> bool:
         return False
 
     overlap = existing_terms & candidate_terms
+    if (
+        existing_numbers
+        and candidate_numbers
+        and existing_numbers & candidate_numbers
+        and _evidence_concepts(existing_terms) & _evidence_concepts(candidate_terms)
+    ):
+        return True
+
+    if (
+        existing_numbers
+        and candidate_numbers
+        and existing_numbers == candidate_numbers
+        and overlap & _HIGH_SIGNAL_TERMS
+    ):
+        return True
+
     smaller_size = min(len(existing_terms), len(candidate_terms))
     return len(overlap) / smaller_size >= 0.55
+
+
+def _evidence_concepts(terms: set[str]) -> set[str]:
+    """Map evidence terms into coarse business concepts."""
+    concepts = set()
+    for concept, concept_terms in _CONCEPT_TERMS.items():
+        if terms & concept_terms:
+            concepts.add(concept)
+    return concepts
 
 
 def _append_unique_evidence(board: list, new_evidence: list) -> list:

@@ -39,6 +39,12 @@ EcoRide smoke test result:
 - Persisted 3 visited roles.
 - Returned `info_sufficient: true`.
 
+Role Contract v1 regression result:
+
+- EcoRide passed with stable role types `local_regulatory`, `finance`, and `operations`.
+- Spotify passed with stable role types `finance`, `local_regulatory`, and `operations`.
+- EcoRide repeated CFO questions did not duplicate core `revenue per ride` or `runway` evidence after concept-level deduplication.
+
 ## Agent Design Principles
 
 1. Do not put locked fact text into a sub-agent prompt before unlock.
@@ -154,6 +160,7 @@ Implemented:
 - Keep concrete numbers, quotes, and decision risks.
 - Use a deterministic fallback when the model-based extractor fails.
 - Apply lightweight semantic deduplication for near-duplicate evidence from the same source.
+- Apply concept-level deduplication so repeated liquidity/runway facts do not split into several evidence items.
 
 Remaining:
 
