@@ -433,6 +433,96 @@ def submit_session(session_id: str) -> None:
     ).eq("id", session_id).execute()
 
 
+def create_case(
+    title: str,
+    description: str,
+    raw_content: str,
+    case_type: str,
+    difficulty: str,
+    teaching_goals: list[str],
+) -> dict:
+    result = (
+        _get_client().table("cases")
+        .insert(
+            {
+                "title": title,
+                "description": description,
+                "raw_content": raw_content,
+                "case_type": case_type,
+                "difficulty": difficulty,
+                "teaching_goals": teaching_goals,
+                "status": "draft",
+            }
+        )
+        .execute()
+    )
+    return result.data[0]
+
+
+def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list | None = None) -> dict:
+    result = (
+        _get_client().table("playbooks")
+        .insert(
+            {
+                "case_id": case_id,
+                "version": 1,
+                "roles": roles,
+                "questions": questions,
+                "info_atoms": info_atoms or [],
+                "review_status": "pending",
+            }
+        )
+        .execute()
+    )
+    return result.data[0]
+
+
+def get_playbook(playbook_id: str) -> dict | None:
+    result = (
+        _get_client().table("playbooks")
+        .select("*")
+        .eq("id", playbook_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def get_pending_playbook(case_id: str) -> dict | None:
+    result = (
+        _get_client().table("playbooks")
+        .select("*")
+        .eq("case_id", case_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def approve_playbook(playbook_id: str) -> None:
+    _get_client().table("playbooks").update(
+        {
+            "review_status": "approved",
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", playbook_id).execute()
+
+
+def reject_playbook(playbook_id: str, notes: str = "") -> None:
+    _get_client().table("playbooks").update(
+        {
+            "review_status": "rejected",
+            "review_notes": notes,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", playbook_id).execute()
+
+
+def publish_case(case_id: str) -> None:
+    _get_client().table("cases").update({"status": "published"}).eq("id", case_id).execute()
+
+
 def get_case_stats(case_id: str) -> dict:
     sessions = (
         _get_client().table("sessions")
