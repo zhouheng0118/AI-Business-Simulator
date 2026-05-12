@@ -61,6 +61,30 @@ export interface ApiSession {
     submitted_at: string | null;
 }
 
+export interface ApiMessage {
+    id: string;
+    session_id: string;
+    role: "student" | "agent" | "assistant";
+    agent_name: string | null;
+    content: string;
+    created_at: string;
+}
+
+export interface ApiEvidence {
+    source: string;
+    key_info: string;
+    data: string;
+    risk: string;
+}
+
+export interface ApiSendMessageResponse {
+    reply: string;
+    new_evidence: ApiEvidence[];
+    agent_name: string;
+    info_sufficient: boolean;
+    roles_visited: string[];
+}
+
 export interface ApiAssignment {
     case_id: string;
     due_at: string | null;
@@ -88,6 +112,16 @@ export const api = {
             get<ApiSession[]>(`/sessions/by-student/${studentId}`),
         create: (caseId: string, studentId: string) =>
             post<ApiSession>("/sessions", { case_id: caseId, student_id: studentId }),
+        get: (sessionId: string) =>
+            get<ApiSession>(`/sessions/${sessionId}`),
+        getMessages: (sessionId: string) =>
+            get<ApiMessage[]>(`/sessions/${sessionId}/messages`),
+        getEvidence: (sessionId: string) =>
+            get<{ evidence_board: ApiEvidence[] }>(`/sessions/${sessionId}/evidence`),
+        sendMessage: (sessionId: string, roleName: string, message: string) =>
+            post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
+        proceed: (sessionId: string) =>
+            post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
     },
     assignments: {
         byStudent: (studentId: string) =>
