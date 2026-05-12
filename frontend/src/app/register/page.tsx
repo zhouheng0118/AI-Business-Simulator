@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import RoleChip from "@/components/RoleChip";
 import AuthFooter from "@/components/AuthFooter";
+import { registerUser } from "@/lib/auth";
 
 type Role = "professor" | "student";
 
@@ -24,6 +26,7 @@ interface FormErrors {
 }
 
 export default function RegisterPage() {
+    const router = useRouter();
     const [form, setForm] = useState<FormState>({
         fullName: "",
         email: "",
@@ -48,10 +51,14 @@ export default function RegisterPage() {
         e.preventDefault();
         const errs = validate();
         setErrors(errs);
-        if (Object.keys(errs).length === 0) {
-            // TODO: call registration API
-            console.log("register", form);
-        }
+        if (Object.keys(errs).length > 0) return;
+        registerUser({
+            fullName: form.fullName,
+            email: form.email,
+            password: form.password,
+            role: form.role!,
+        });
+        router.push("/login");
     }
 
     return (

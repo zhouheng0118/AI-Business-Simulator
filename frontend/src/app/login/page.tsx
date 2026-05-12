@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthFooter from "@/components/AuthFooter";
+import { loginUser } from "@/lib/auth";
 
 interface FormState {
     email: string;
@@ -15,6 +17,7 @@ interface FormErrors {
 }
 
 export default function LoginPage() {
+    const router = useRouter();
     const [form, setForm] = useState<FormState>({ email: "", password: "" });
     const [errors, setErrors] = useState<FormErrors>({});
     const [showPassword, setShowPassword] = useState(false);
@@ -30,10 +33,13 @@ export default function LoginPage() {
         e.preventDefault();
         const errs = validate();
         setErrors(errs);
-        if (Object.keys(errs).length === 0) {
-            // TODO: call login API
-            console.log("login", form);
+        if (Object.keys(errs).length > 0) return;
+        const user = loginUser(form.email, form.password);
+        if (!user) {
+            setErrors({ password: "Incorrect email or password." });
+            return;
         }
+        router.push(user.role === "professor" ? "/dashboard/professor" : "/dashboard/student");
     }
 
     return (
@@ -137,6 +143,17 @@ export default function LoginPage() {
                                 Create one
                             </Link>
                         </p>
+
+                        {/* Demo hint */}
+                        <div style={{
+                            background: "#f5f5f7", borderRadius: 8, padding: "10px 14px",
+                            fontSize: "12px", color: "#7a7a7a", lineHeight: 1.6,
+                            fontFamily: "SF Pro Text, system-ui, sans-serif",
+                        }}>
+                            <strong style={{ color: "#1d1d1f" }}>Demo accounts</strong><br />
+                            Professor: <code style={{ fontSize: 11 }}>professor@demo.com</code> / <code style={{ fontSize: 11 }}>demo1234</code><br />
+                            Student: <code style={{ fontSize: 11 }}>student@demo.com</code> / <code style={{ fontSize: 11 }}>demo1234</code>
+                        </div>
                     </form>
                 </div>
             </div>
