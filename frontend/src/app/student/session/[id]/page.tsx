@@ -19,13 +19,24 @@ const DEFAULT_ROLES: ApiPlaybookRole[] = [
 const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string; accent: string }> = {
     "CEO":                     { bg: "#eef4ff", border: "#bdd3ff", dot: "#0066cc", accent: "#0066cc" },
     "CFO":                     { bg: "#edfaf3", border: "#b9efd4", dot: "#1d8a4f", accent: "#1d8a4f" },
+    "Head of Operations":      { bg: "#fff7ed", border: "#fcd9a8", dot: "#c05c00", accent: "#c05c00" },
     "Operations Director":     { bg: "#fff7ed", border: "#fcd9a8", dot: "#c05c00", accent: "#c05c00" },
+    "City Official":           { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
     "Customer Representative": { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
+    "Customer Rep":            { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
     "Local Expert":            { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
 };
 
 function rc(name: string) {
     return ROLE_COLORS[name] ?? { bg: "#f5f5f7", border: "#e0e0e0", dot: "#7a7a7a", accent: "#7a7a7a" };
+}
+
+function roleRequestValue(role: ApiPlaybookRole | undefined): string {
+    return role?.role_type || role?.name || "";
+}
+
+function hasSufficientEvidence(rolesVisited: string[], evidence: ApiEvidence[]): boolean {
+    return rolesVisited.length >= 3 && evidence.length >= 3;
 }
 
 
@@ -233,16 +244,22 @@ function TypingIndicator({ roleName }: { roleName: string }) {
 const EVIDENCE_CATEGORY: Record<string, { label: string; bg: string; color: string }> = {
     "CEO":                     { label: "Strategic",   bg: "#f5f0ff", color: "#6b21a8" },
     "CFO":                     { label: "Financial",   bg: "#fff7ed", color: "#c05c00" },
+    "Head of Operations":      { label: "Operational", bg: "#edfaf3", color: "#1d8a4f" },
     "Operations Director":     { label: "Operational", bg: "#edfaf3", color: "#1d8a4f" },
     "Customer Representative": { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
+    "Customer Rep":            { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
+    "City Official":           { label: "Regulatory",  bg: "#edfafa", color: "#0e7490" },
     "Local Expert":            { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
 };
 
 const ROLE_DATA_HINTS: Record<string, string> = {
     "CEO":                     "strategic direction data missing",
     "CFO":                     "financial risk data missing",
+    "Head of Operations":      "execution risk data missing",
     "Operations Director":     "execution cost data missing",
     "Customer Representative": "demand validation missing",
+    "Customer Rep":            "demand validation missing",
+    "City Official":           "regulatory access data missing",
     "Local Expert":            "rental cost data missing",
 };
 
@@ -409,6 +426,7 @@ export default function SessionPage() {
                 setRolesVisited(session.interviewed_roles);
                 setMessages(msgs);
                 setEvidence(ev.evidence_board);
+                setInfoSufficient(hasSufficientEvidence(session.interviewed_roles, ev.evidence_board));
                 setCaseId(session.case_id);
                 const detail = await api.cases.get(session.case_id);
                 setCaseDetail(detail);
@@ -420,6 +438,8 @@ export default function SessionPage() {
     const handleSend = useCallback(async () => {
         if (!selectedRole || !inputText.trim() || sending) return;
         const text = inputText.trim();
+        const activeRole = caseDetail?.playbook?.roles?.find((role) => role.name === selectedRole);
+        const roleName = roleRequestValue(activeRole) || selectedRole;
         setInputText("");
         setSending(true);
 
@@ -430,26 +450,22 @@ export default function SessionPage() {
         }]);
 
         try {
-            const res = await api.sessions.sendMessage(sessionId, selectedRole, text);
+            const res = await api.sessions.sendMessage(sessionId, roleName, text);
+            const evidenceResult = await api.sessions.getEvidence(sessionId);
             setMessages((prev) => [...prev, {
                 id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
                 agent_name: res.agent_name, content: res.reply, created_at: new Date().toISOString(),
             }]);
-            if (res.new_evidence.length > 0) {
-                setEvidence((prev) => {
-                    const seen = new Set(prev.map((e) => `${e.source}::${e.key_info}`));
-                    return [...prev, ...res.new_evidence.filter((e) => !seen.has(`${e.source}::${e.key_info}`))];
-                });
-            }
+            setEvidence(evidenceResult.evidence_board);
             setRolesVisited(res.roles_visited);
-            setInfoSufficient(res.info_sufficient);
+            setInfoSufficient(res.info_sufficient || hasSufficientEvidence(res.roles_visited, evidenceResult.evidence_board));
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== tempId));
             setError("Failed to send. Please try again.");
         } finally {
             setSending(false);
         }
-    }, [selectedRole, inputText, sending, sessionId]);
+    }, [selectedRole, inputText, sending, sessionId, caseDetail]);
 
     async function handleProceed() {
         try {

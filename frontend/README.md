@@ -1,36 +1,111 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CaseIQ Frontend
 
-## Getting Started
+Next.js 14 App Router frontend for the CaseIQ business-school simulation.
 
-First, run the development server:
+## Current Status
+
+The frontend is connected to the validated Agent backend:
+
+- Student registration/login flow is available.
+- Student dashboard can load cases from FastAPI.
+- Case detail page can start or continue a session.
+- Student interview screen can send stakeholder questions to the backend.
+- Backend responses from Gemma-powered Agents render in the chat UI.
+- Evidence board refreshes from `/sessions/{id}/evidence` after every turn.
+- Answer submission page renders playbook questions and evidence citations.
+- Submitted answers are persisted through `/sessions/{id}/submissions`.
+- Stable Agent role types are supported while preserving case-specific display names.
+
+Validated locally:
+
+```text
+Frontend -> FastAPI -> Supabase -> Agent Orchestrator -> Gemma -> Evidence Board -> Answer Submission
+```
+
+## Setup
+
+Install dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+Create `.env.local` if needed:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_PROFESSOR_PASSCODE=prof-demo
+NEXT_PUBLIC_STUDENT_PASSCODE=student-demo
+```
+
+Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Local Full-Stack Run
 
-## Learn More
+Terminal 1:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cd backend
+source .venv/bin/activate
+python -m uvicorn main:app --reload
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Terminal 2:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+cd frontend
+npm run dev
+```
 
-## Deploy on Vercel
+## Interview Flow
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Register or log in as a student.
+2. Open the student dashboard.
+3. Select a published case.
+4. Start or continue an interview session.
+5. Interview stakeholders.
+6. Confirm evidence board updates after each answer.
+7. Proceed when the backend returns `info_sufficient: true`.
+8. Answer playbook questions.
+9. Cite evidence board items in each answer.
+10. Submit final answers.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Backend Contract Used
+
+```text
+GET  /cases
+GET  /cases/{case_id}
+POST /sessions
+GET  /sessions/{session_id}
+GET  /sessions/{session_id}/messages
+POST /sessions/{session_id}/messages
+GET  /sessions/{session_id}/evidence
+POST /sessions/{session_id}/proceed
+GET  /sessions/{session_id}/submissions
+POST /sessions/{session_id}/submissions
+```
+
+The session page sends `role.role_type` when available, otherwise it falls back to the case-specific role name. After each message, it fetches `/sessions/{id}/evidence` so the UI reflects the backend's deduplicated evidence board.
+The answer page saves one submission row per playbook question and includes cited evidence payloads with each answer.
+
+## Verification
+
+```bash
+npm run lint
+npm run build
+```
+
+Known npm note:
+
+- `npm audit` currently reports dependency vulnerabilities from the Next.js dependency tree. Do not run `npm audit fix --force` without reviewing breaking changes.

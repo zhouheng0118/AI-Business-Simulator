@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 import re
 
@@ -276,6 +277,47 @@ def update_session_status(session_id: str, status: str) -> None:
     _get_client().table("sessions").update({"status": status}).eq(
         "id", session_id
     ).execute()
+
+
+def get_submissions(session_id: str) -> list:
+    return (
+        _get_client().table("submissions")
+        .select("*")
+        .eq("session_id", session_id)
+        .order("created_at")
+        .execute()
+        .data
+    )
+
+
+def submit_answers(session_id: str, answers: list[dict]) -> list:
+    rows = [
+        {
+            "session_id": session_id,
+            "question_id": answer["question_id"],
+            "question_type": answer["question_type"],
+            "answer": answer["answer"],
+            "cited_evidence": answer.get("cited_evidence") or [],
+            "alternatives_excluded": answer.get("alternatives_excluded"),
+        }
+        for answer in answers
+    ]
+
+    saved = (
+        _get_client().table("submissions")
+        .upsert(rows, on_conflict="session_id,question_id")
+        .execute()
+        .data
+    )
+
+    _get_client().table("sessions").update(
+        {
+            "status": "submitted",
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", session_id).execute()
+
+    return saved
 
 
 def get_case(case_id: str) -> dict | None:
