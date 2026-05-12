@@ -4,6 +4,33 @@ import re
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 _client: Any | None = None
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "has",
+    "have",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "our",
+    "per",
+    "that",
+    "the",
+    "this",
+    "to",
+    "with",
+}
 
 
 def _get_client() -> Any:
@@ -96,6 +123,62 @@ def _evidence_key(item: dict) -> tuple[str, str]:
     return source, key_info
 
 
+def _evidence_numbers(item: dict) -> set[str]:
+    text = " ".join(
+        str(item.get(field, ""))
+        for field in ("key_info", "data", "risk")
+    ).lower()
+    return set(re.findall(r"\$?\d+(?:\.\d+)?%?|\d+(?:\.\d+)?m", text))
+
+
+def _evidence_terms(item: dict) -> set[str]:
+    text = " ".join(
+        str(item.get(field, ""))
+        for field in ("key_info", "risk")
+    ).lower()
+    words = re.findall(r"[a-z][a-z0-9-]{2,}", text)
+    return {word for word in words if word not in _STOPWORDS}
+
+
+def _is_semantic_duplicate(existing: dict, candidate: dict) -> bool:
+    """Return whether two evidence items are near-duplicates for one source."""
+    if _evidence_key(existing)[0] != _evidence_key(candidate)[0]:
+        return False
+
+    existing_numbers = _evidence_numbers(existing)
+    candidate_numbers = _evidence_numbers(candidate)
+    if existing_numbers and candidate_numbers and existing_numbers != candidate_numbers:
+        return False
+
+    existing_terms = _evidence_terms(existing)
+    candidate_terms = _evidence_terms(candidate)
+    if not existing_terms or not candidate_terms:
+        return False
+
+    overlap = existing_terms & candidate_terms
+    smaller_size = min(len(existing_terms), len(candidate_terms))
+    return len(overlap) / smaller_size >= 0.55
+
+
+def _append_unique_evidence(board: list, new_evidence: list) -> list:
+    """Append evidence while removing exact and near-duplicate items."""
+    result = [item for item in board if isinstance(item, dict)]
+    seen = {_evidence_key(item) for item in result}
+
+    for item in new_evidence:
+        if not isinstance(item, dict):
+            continue
+        key = _evidence_key(item)
+        if key in seen or not all(key):
+            continue
+        if any(_is_semantic_duplicate(existing, item) for existing in result):
+            continue
+        seen.add(key)
+        result.append(item)
+
+    return result
+
+
 def update_evidence_and_roles(
     session_id: str, new_evidence: list, role_name: str
 ) -> None:
@@ -103,15 +186,7 @@ def update_evidence_and_roles(
     board: list = list(session.get("evidence_board") or [])
     roles: list = list(session.get("interviewed_roles") or [])
 
-    seen = {_evidence_key(item) for item in board if isinstance(item, dict)}
-    for item in new_evidence:
-        if not isinstance(item, dict):
-            continue
-        key = _evidence_key(item)
-        if key in seen or not all(key):
-            continue
-        seen.add(key)
-        board.append(item)
+    board = _append_unique_evidence(board, new_evidence)
 
     if role_name not in roles:
         roles.append(role_name)

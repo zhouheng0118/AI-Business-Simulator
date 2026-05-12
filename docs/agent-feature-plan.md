@@ -144,13 +144,19 @@ Expected behavior:
 
 ## Phase 3: Evidence Quality
 
-Improve evidence extraction so the board is useful for scoring:
+Improve evidence extraction so the board is useful for scoring.
+
+Implemented:
 
 - Return multiple evidence items per turn.
 - Deduplicate by `source + key_info`.
 - Reject vague facts.
 - Keep concrete numbers, quotes, and decision risks.
 - Use a deterministic fallback when the model-based extractor fails.
+- Apply lightweight semantic deduplication for near-duplicate evidence from the same source.
+
+Remaining:
+
 - Add confidence or evidence type later if scoring needs it.
 
 ## Phase 4: Case Quality

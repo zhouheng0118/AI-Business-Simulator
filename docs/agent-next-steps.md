@@ -36,6 +36,7 @@ Completed:
 - Hardened evidence extraction:
   - Multiple evidence items per turn are supported.
   - Evidence is deduplicated by `source + key_info`.
+  - Near-duplicate evidence is deduplicated by source, numeric consistency, and keyword overlap.
   - Vague evidence is filtered before persistence.
   - A deterministic fallback extracts concrete evidence when the model-based extractor fails.
 - Hardened information boundaries:
@@ -366,7 +367,7 @@ Priority order:
 1. Re-run EcoRide and Spotify smoke tests with role type routing.
 2. Confirm `/sessions/{id}/messages` works when `role_name` is a display name and when it is a stable `role_type`.
 3. Confirm role prompts remain natural for `City Official`, `Local Expert`, `Customer Rep`, and future case-specific names.
-4. Start semantic evidence deduplication after role contract is validated end-to-end.
+4. Re-run a full demo path and inspect evidence quality across repeated questions.
 
 The definition of done for this stage:
 
