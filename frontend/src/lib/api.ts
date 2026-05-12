@@ -32,6 +32,7 @@ export interface ApiCase {
 export interface ApiPlaybookRole {
     name: string;
     title: string;
+    role_type?: string;
     persona?: string;
     focus_area: string;
     allowed_info?: string[];
@@ -144,6 +145,25 @@ export interface ApiCaseStats {
     avg_score: number | null;
 }
 
+export interface ApiCreateCasePayload {
+    title: string;
+    description: string;
+    raw_content: string;
+    case_type: "decision" | "analysis" | "reflection";
+    difficulty: "easy" | "medium" | "hard";
+    teaching_goals: string[];
+}
+
+export interface ApiCreateCaseResponse {
+    case: ApiCase;
+    playbook: ApiPlaybook;
+}
+
+export interface ApiApproveResponse {
+    status: string;
+    case_status: string;
+}
+
 // API calls
 
 export const api = {
@@ -178,6 +198,23 @@ export const api = {
     assignments: {
         byStudent: (studentId: string) =>
             get<ApiAssignment[]>(`/assignments/by-student/${studentId}`),
+    },
+    professor: {
+        parseFile: async (file: File): Promise<{ text: string; file_type: string }> => {
+            const form = new FormData();
+            form.append("file", file);
+            const res = await fetch(`${BASE}/cases/parse-file`, { method: "POST", body: form });
+            if (!res.ok) throw new Error(`API ${res.status}: /cases/parse-file`);
+            return res.json();
+        },
+        createCase: (payload: ApiCreateCasePayload) =>
+            post<ApiCreateCaseResponse>("/cases", payload),
+        getPendingPlaybook: (caseId: string) =>
+            get<ApiCreateCaseResponse>(`/cases/${caseId}/playbook/pending`),
+        approvePlaybook: (caseId: string, playbookId: string) =>
+            post<ApiApproveResponse>(`/cases/${caseId}/playbook/${playbookId}/approve`, { publish: true }),
+        rejectPlaybook: (caseId: string, playbookId: string, notes: string) =>
+            post<{ status: string }>(`/cases/${caseId}/playbook/${playbookId}/reject`, { notes }),
     },
 };
 
