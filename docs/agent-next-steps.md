@@ -106,7 +106,7 @@ This path is more important than professor upload, streaming, scoring, or UI pol
 
 ## 3. Immediate Next Step
 
-Start answer-submission and evidence-citation support.
+Answer-submission and evidence-citation support is now implemented.
 
 The product now exposes five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both map to the same product role type.
 
@@ -141,13 +141,14 @@ Validated frontend integration:
 3. Frontend renders `reply`, `new_evidence`, `roles_visited`, and `info_sufficient`.
 4. Frontend can fetch `/sessions/{id}/evidence` after each interview turn.
 
-Next product target:
+Completed answer flow:
 
-1. Add an answering screen after `info_sufficient: true`.
-2. Let students answer playbook questions.
+1. Added an answering screen at `/student/session/{id}/answer`.
+2. Rendered playbook questions from the approved playbook.
 3. Let students cite evidence board items in each answer.
-4. Persist answers to `submissions`.
-5. Defer scoring/debrief until answer capture and citations are reliable.
+4. Added `GET /sessions/{id}/submissions` and `POST /sessions/{id}/submissions`.
+5. Persisted submitted answers to `submissions` and moved the session to `submitted`.
+6. Deferred scoring/debrief until answer capture and citations are reliable.
 
 ## 4. Smoke Test Runbook
 
@@ -405,6 +406,9 @@ I have the Agent core, Gemma 4 API, Supabase access, and local Python 3.12 envir
 The real student interview path has been validated through the frontend:
 Next.js frontend -> FastAPI -> Supabase -> Orchestrator -> Gemma 4 -> Evidence -> Supabase -> frontend evidence board.
 
+The answer-submission path is implemented:
+Next.js answer page -> FastAPI submissions API -> Supabase submissions -> session submitted status.
+
 Agent Role Contract v1 is implemented locally so the product can keep five stable stakeholder types while each case uses realistic role names such as City Official, Local Expert, Rider, or Customer Rep.
 ```
 
@@ -412,13 +416,13 @@ Agent Role Contract v1 is implemented locally so the product can keep five stabl
 
 Priority order:
 
-1. Build the answer submission screen for playbook questions.
-2. Add evidence citation from the evidence board into each answer.
-3. Persist answer drafts/submissions to `submissions`.
-4. Add one end-to-end path: interview -> ready to answer -> submit answer with citations.
+1. Smoke test the full path: interview -> ready to answer -> submit answer with citations.
+2. Add the scoring/debrief API on top of submitted answers and cited evidence.
+3. Add professor-facing report review once scoring output is stable.
+4. Add regression tests for report generation and blind-spot detection.
 
 The definition of done for this stage:
 
 ```text
-A student can complete the interview loop in the frontend, proceed to answering, write responses to the case questions, cite evidence, and persist the submission.
+A student can complete the interview loop in the frontend, proceed to answering, write responses to the case questions, cite evidence, persist the submission, and receive an initial scored debrief.
 ```

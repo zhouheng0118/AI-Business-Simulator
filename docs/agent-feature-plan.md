@@ -205,10 +205,16 @@ Only build scoring after evidence is reliable:
 
 ## Phase 6: Frontend Answer Flow
 
+Implemented:
+
+- Built an answer screen after the interview phase.
+- Rendered playbook questions from the approved playbook.
+- Let students cite evidence board items while answering.
+- Persisted final answers to `submissions`.
+- Marked sessions as `submitted` after successful answer submission.
+
 Next product priority:
 
-- Build an answer screen after the interview phase.
-- Render playbook questions from the case.
-- Let students cite evidence board items while answering.
-- Persist answers to `submissions`.
-- Only then build scoring and debrief on top of submitted answers and cited evidence.
+- Build scoring and debrief on top of submitted answers and cited evidence.
+- Replay interview path against the evidence board.
+- Identify missed stakeholders, weak citations, and unsupported recommendations.

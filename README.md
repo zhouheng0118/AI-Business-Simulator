@@ -175,9 +175,12 @@ The student interview screen uses the validated backend contract:
 ```text
 POST /sessions/{session_id}/messages
 GET /sessions/{session_id}/evidence
+GET /sessions/{session_id}/submissions
+POST /sessions/{session_id}/submissions
 ```
 
 After each stakeholder reply, the frontend refreshes the evidence board from the backend so it displays the deduplicated source of truth.
+After the interview phase, the answer screen renders playbook questions, lets students cite evidence board items, and persists final answers to `submissions`.
 
 ## API Endpoints (P1)
 
@@ -191,6 +194,8 @@ After each stakeholder reply, the frontend refreshes the evidence board from the
 | `/sessions/{id}/messages` | GET | Fetch conversation history |
 | `/sessions/{id}/evidence` | GET | Get current evidence board |
 | `/sessions/{id}/proceed` | POST | Advance session to answering phase |
+| `/sessions/{id}/submissions` | GET | Fetch saved answers for a session |
+| `/sessions/{id}/submissions` | POST | Submit final answers with cited evidence |
 
 ## Message Flow (Orchestrator)
 
@@ -219,8 +224,8 @@ The Agent does not put locked fact text into a sub-agent prompt before unlock. L
 
 | Phase | Scope |
 |---|---|
-| **P1** | Hardcoded demo case + HTTP conversation flow (5 roles + info boundary) + Evidence Board |
-| **P2** | Answer interface (3 question types + evidence citation) + per-question scoring + debrief report |
+| **P1** | Hardcoded demo case + HTTP conversation flow (5 roles + info boundary) + Evidence Board + answer submission |
+| **P2** | Per-question scoring + debrief report |
 | **P3** | Professor upload + 3-step playbook generation + review interface + case assignment |
 | **P4** | WebSocket streaming + Supabase Realtime student assistant push |
 | **P5** | Student assistant agent tuning + Word/PPT parsing + multi-model UI |

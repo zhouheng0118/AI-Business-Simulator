@@ -12,12 +12,14 @@ The frontend is connected to the validated Agent backend:
 - Student interview screen can send stakeholder questions to the backend.
 - Backend responses from Gemma-powered Agents render in the chat UI.
 - Evidence board refreshes from `/sessions/{id}/evidence` after every turn.
+- Answer submission page renders playbook questions and evidence citations.
+- Submitted answers are persisted through `/sessions/{id}/submissions`.
 - Stable Agent role types are supported while preserving case-specific display names.
 
 Validated locally:
 
 ```text
-Frontend -> FastAPI -> Supabase -> Agent Orchestrator -> Gemma -> Evidence Board -> Frontend
+Frontend -> FastAPI -> Supabase -> Agent Orchestrator -> Gemma -> Evidence Board -> Answer Submission
 ```
 
 ## Setup
@@ -75,6 +77,9 @@ npm run dev
 5. Interview stakeholders.
 6. Confirm evidence board updates after each answer.
 7. Proceed when the backend returns `info_sufficient: true`.
+8. Answer playbook questions.
+9. Cite evidence board items in each answer.
+10. Submit final answers.
 
 ## Backend Contract Used
 
@@ -87,9 +92,12 @@ GET  /sessions/{session_id}/messages
 POST /sessions/{session_id}/messages
 GET  /sessions/{session_id}/evidence
 POST /sessions/{session_id}/proceed
+GET  /sessions/{session_id}/submissions
+POST /sessions/{session_id}/submissions
 ```
 
 The session page sends `role.role_type` when available, otherwise it falls back to the case-specific role name. After each message, it fetches `/sessions/{id}/evidence` so the UI reflects the backend's deduplicated evidence board.
+The answer page saves one submission row per playbook question and includes cited evidence payloads with each answer.
 
 ## Verification
 

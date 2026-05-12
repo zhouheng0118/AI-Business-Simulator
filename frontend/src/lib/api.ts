@@ -39,12 +39,19 @@ export interface ApiPlaybookRole {
     locked_info?: string[];
 }
 
+export interface ApiPlaybookQuestion {
+    id: string;
+    type: "decision" | "analysis" | "reflection" | string;
+    text: string;
+    rubric_dimensions?: { name: string; weight: number }[];
+}
+
 export interface ApiPlaybook {
     id: string;
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
-    questions: unknown[];
+    questions: ApiPlaybookQuestion[];
     review_status: string;
 }
 
@@ -77,6 +84,21 @@ export interface ApiEvidence {
     key_info: string;
     data: string;
     risk: string;
+}
+
+export interface ApiCitedEvidence extends ApiEvidence {
+    evidence_index: number;
+}
+
+export interface ApiSubmission {
+    id?: string;
+    session_id?: string;
+    question_id: string;
+    question_type: string;
+    answer: string;
+    cited_evidence: ApiCitedEvidence[];
+    alternatives_excluded?: string | null;
+    created_at?: string;
 }
 
 export interface ApiSendMessageResponse {
@@ -124,6 +146,10 @@ export const api = {
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
         proceed: (sessionId: string) =>
             post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
+        getSubmissions: (sessionId: string) =>
+            get<{ submissions: ApiSubmission[] }>(`/sessions/${sessionId}/submissions`),
+        submitAnswers: (sessionId: string, answers: ApiSubmission[]) =>
+            post<{ status: string; submissions: ApiSubmission[] }>(`/sessions/${sessionId}/submissions`, { answers }),
     },
     assignments: {
         byStudent: (studentId: string) =>
