@@ -1,30 +1,54 @@
 import re
-from config import llm_client, MODEL_NAME
+from pathlib import Path
+
+from llm_client import chat
 
 
-def _build_system_prompt(role: dict, allowed_info: list) -> str:
-    allowed_str = (
-        "\n".join(f"- {info}" for info in allowed_info)
-        if allowed_info
-        else "(none)"
-    )
-    locked_str = (
-        "\n".join(f"- {info}" for info in role.get("locked_info", []))
-        or "(none)"
-    )
+PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+ROLE_PROMPT_FILES = {
+    "ceo": "ceo_prompt.txt",
+    "cfo": "cfo_prompt.txt",
+    "chief financial officer": "cfo_prompt.txt",
+    "运营负责人": "operations_prompt.txt",
+    "head of operations": "operations_prompt.txt",
+    "operations manager": "operations_prompt.txt",
+    "客户代表": "customer_prompt.txt",
+    "customer rep": "customer_prompt.txt",
+    "customer representative": "customer_prompt.txt",
+    "本地专家": "local_expert_prompt.txt",
+    "local expert": "local_expert_prompt.txt",
+    "market consultant": "local_expert_prompt.txt",
+}
 
-    return f"""You are {role["name"]}, {role["title"]} at the company in this business case study.
 
-Your persona: {role["persona"]}
-Your focus area: {role["focus_area"]}
+def _prompt_file_for(role_name: str) -> Path:
+    """Return the prompt template path for a role name or title."""
+    return PROMPT_DIR / ROLE_PROMPT_FILES.get(role_name.lower(), "generic_prompt.txt")
+
+
+def _load_prompt_template(role: dict) -> str:
+    """Load the best matching role prompt template from agents/prompts."""
+    role_name = str(role.get("name", ""))
+    title = str(role.get("title", ""))
+    for value in (role_name, title):
+        path = _prompt_file_for(value)
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+
+    return """You are {name}, {title} at the company in this business case study.
+
+Your persona: {persona}
+Your focus area: {focus_area}
 
 [Information you CAN share in this conversation]
-{allowed_str}
+{allowed_info}
 
-[Information you MUST NOT reveal — do not mention even indirectly]
-{locked_str}
+[Information you MUST NOT reveal - do not mention even indirectly]
+{locked_info}
 
-You are being interviewed by a business school student who is analyzing a strategic decision.
+[Unlock condition summary]
+{unlock_conditions}
+
 Answer naturally and stay in character. Keep replies concise (2-4 sentences).
 If asked about something outside your domain, redirect the student to the relevant person.
 Do not volunteer locked information even if asked indirectly.
@@ -33,7 +57,35 @@ End your response with exactly this self-check line:
 <boundary_check>NO</boundary_check>"""
 
 
+def _build_system_prompt(role: dict, allowed_info: list) -> str:
+    """Build a role-specific system prompt with controlled information."""
+    allowed_str = (
+        "\n".join(f"- {info}" for info in allowed_info)
+        if allowed_info
+        else "(none)"
+    )
+    locked_count = len(role.get("locked_info", []) or [])
+    locked_str = (
+        f"({locked_count} locked fact(s) exist. Exact locked facts are withheld "
+        "from this prompt until the orchestrator unlocks them.)"
+        if locked_count
+        else "(none)"
+    )
+
+    template = _load_prompt_template(role)
+    return template.format(
+        name=role.get("name", ""),
+        title=role.get("title", ""),
+        persona=role.get("persona", ""),
+        focus_area=role.get("focus_area", ""),
+        allowed_info=allowed_str,
+        locked_info=locked_str,
+        unlock_conditions=role.get("unlock_conditions", ""),
+    )
+
+
 def _strip_boundary_check(text: str) -> str:
+    """Remove the internal boundary self-check marker before returning text."""
     return re.sub(
         r"\s*<boundary_check>.*?</boundary_check>",
         "",
@@ -42,26 +94,29 @@ def _strip_boundary_check(text: str) -> str:
     ).strip()
 
 
+def _message_belongs_to_role_thread(msg: dict, role_name: str) -> bool:
+    """Return whether a stored message belongs to this stakeholder thread."""
+    agent_name = msg.get("agent_name")
+    return agent_name in {role_name, None, ""}
+
+
 async def call_sub_agent(
     role: dict, allowed_info: list, history: list, student_message: str
 ) -> str:
+    """Call one stakeholder sub-agent with a role prompt and scoped history."""
     system_prompt = _build_system_prompt(role, allowed_info)
 
     # Include only messages for this role's conversation thread (last 10 turns)
-    messages = [{"role": "system", "content": system_prompt}]
+    filtered_history = []
     for msg in history[-10:]:
-        if msg.get("agent_name") == role["name"] or msg["role"] == "student":
-            openai_role = (
-                "assistant" if msg["role"] in ("agent", "assistant") else "user"
-            )
-            messages.append({"role": openai_role, "content": msg["content"]})
-    messages.append({"role": "user", "content": student_message})
+        if _message_belongs_to_role_thread(msg, role["name"]):
+            filtered_history.append(msg)
 
-    response = await llm_client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
+    raw = await chat(
+        system_prompt,
+        student_message,
+        history=filtered_history,
         max_tokens=400,
         temperature=0.7,
     )
-    raw = response.choices[0].message.content or ""
     return _strip_boundary_check(raw)
