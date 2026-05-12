@@ -43,7 +43,7 @@ export interface ApiPlaybook {
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
-    questions: unknown[];
+    questions: ApiQuestion[];
     review_status: string;
 }
 
@@ -90,6 +90,54 @@ export interface ApiAssignment {
     due_at: string | null;
 }
 
+export interface ApiQuestion {
+    id: string;
+    type: "decision" | "analysis" | "reflection";
+    text: string;
+    rubric_dimensions: { name: string; weight: number }[];
+}
+
+export interface ApiSubmitAnswer {
+    question_id: string;
+    answer: string;
+    cited_evidence?: ApiEvidence[];
+}
+
+export interface ApiDimensionScore {
+    name: string;
+    score: number;
+    max_score: number;
+    comment: string;
+}
+
+export interface ApiQuestionScore {
+    question_id: string;
+    question_type: string;
+    dimension_scores: ApiDimensionScore[];
+    question_total: number;
+    question_max: number;
+    feedback: string;
+    strengths: string[];
+    improvements: string[];
+}
+
+export interface ApiReport {
+    id: string;
+    session_id: string;
+    scores: ApiQuestionScore[];
+    total_score: number;
+    total_max: number;
+    interview_path: {
+        roles_visited: string[];
+        roles_missed: string[];
+        key_info_captured: string[];
+        key_info_missed: string[];
+    };
+    blind_spots: { type: string; description: string }[];
+    overall_comment: string;
+    generated_at: string;
+}
+
 export interface ApiCaseStats {
     sessions_total: number;
     sessions_submitted: number;
@@ -122,6 +170,10 @@ export const api = {
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
         proceed: (sessionId: string) =>
             post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
+        submit: (sessionId: string, answers: ApiSubmitAnswer[]) =>
+            post<ApiReport>(`/sessions/${sessionId}/submit`, { answers }),
+        getReport: (sessionId: string) =>
+            get<ApiReport>(`/sessions/${sessionId}/report`),
     },
     assignments: {
         byStudent: (studentId: string) =>

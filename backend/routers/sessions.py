@@ -2,8 +2,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import database as db
 from agents.orchestrator import handle_message
+from agents.scorer import score_answer, get_default_question
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+_DEFAULT_ALL_ROLES = ["CEO", "CFO", "Operations Director", "Customer Representative", "Local Expert"]
 
 
 # Must be declared before /{session_id} to avoid route shadowing
@@ -74,3 +77,112 @@ def proceed_to_answering(session_id: str):
         )
     db.update_session_status(session_id, "answering")
     return {"status": "answering"}
+
+
+class SubmitAnswerIn(BaseModel):
+    question_id: str
+    answer: str
+    cited_evidence: list = []
+
+
+class SubmitSessionIn(BaseModel):
+    answers: list[SubmitAnswerIn]
+
+
+@router.post("/{session_id}/submit")
+async def submit_session(session_id: str, body: SubmitSessionIn):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session["status"] not in ("answering", "submitted", "scored"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session is '{session['status']}', cannot submit yet — proceed first",
+        )
+
+    case = db.get_case(session["case_id"])
+    playbook = db.get_playbook_by_case(session["case_id"])
+    playbook_questions: list = (playbook.get("questions") or []) if playbook else []
+    case_type = (case.get("case_type") or "decision") if case else "decision"
+
+    answer_rows = []
+    for ans in body.answers:
+        q = next((q for q in playbook_questions if q.get("id") == ans.question_id), None)
+        answer_rows.append(
+            {
+                "question_id": ans.question_id,
+                "question_type": q["type"] if q else case_type,
+                "answer": ans.answer,
+                "cited_evidence": ans.cited_evidence,
+            }
+        )
+    db.save_submissions(session_id, answer_rows)
+
+    evidence_board: list = session.get("evidence_board") or []
+    case_context = {"case": case, "playbook": playbook}
+
+    question_scores = []
+    for ans in body.answers:
+        q = next((q for q in playbook_questions if q.get("id") == ans.question_id), None)
+        if q is None:
+            q = get_default_question(case_type)
+        result = await score_answer(q, ans.answer, evidence_board, case_context)
+        question_scores.append(result)
+
+    total_score = sum(q["question_total"] for q in question_scores)
+    total_max = sum(q["question_max"] for q in question_scores)
+
+    interviewed: list = session.get("interviewed_roles") or []
+    all_roles = (
+        [r["name"] for r in (playbook.get("roles") or [])] if playbook else _DEFAULT_ALL_ROLES
+    ) or _DEFAULT_ALL_ROLES
+    missed = [r for r in all_roles if r not in interviewed]
+
+    interview_path = {
+        "roles_visited": interviewed,
+        "roles_missed": missed,
+        "key_info_captured": [e.get("key_info", "") for e in evidence_board[:5]],
+        "key_info_missed": [],
+    }
+
+    blind_spots = []
+    if len(missed) >= 2:
+        blind_spots.append(
+            {
+                "type": "unasked_question",
+                "description": f"You skipped {len(missed)} stakeholder(s): {', '.join(missed)}. Their perspectives may have affected your recommendation.",
+            }
+        )
+    if len(evidence_board) < 5:
+        blind_spots.append(
+            {
+                "type": "evidence_bias",
+                "description": "Limited evidence was collected. More interviews would have provided a stronger evidentiary basis for your analysis.",
+            }
+        )
+
+    overall_comment = question_scores[0]["feedback"] if question_scores else ""
+
+    db.save_report(
+        session_id,
+        question_scores,
+        total_score,
+        total_max,
+        interview_path,
+        blind_spots,
+        overall_comment,
+    )
+    db.submit_session(session_id)
+
+    return db.get_report(session_id)
+
+
+@router.get("/{session_id}/report")
+def get_report(session_id: str):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    report = db.get_report(session_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found — session may not be scored yet")
+    return report
