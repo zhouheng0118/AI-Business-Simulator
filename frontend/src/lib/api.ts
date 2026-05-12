@@ -30,6 +30,7 @@ export interface ApiCase {
 }
 
 export interface ApiPlaybookRole {
+    role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
     persona?: string;
@@ -56,6 +57,7 @@ export interface ApiSession {
     id: string;
     case_id: string;
     status: "in_progress" | "answering" | "submitted" | "scored";
+    evidence_board?: ApiEvidence[];
     interviewed_roles: string[];
     started_at: string;
     submitted_at: string | null;
