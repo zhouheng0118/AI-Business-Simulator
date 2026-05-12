@@ -55,6 +55,10 @@ Completed:
   - Routing supports exact display labels first, then stable role type inference.
   - Prompt selection supports role type first, then role name/title.
   - Existing playbooks without `role_type` remain compatible through inference.
+- Confirmed full demo path regression after Role Contract v1:
+  - EcoRide works with stable role types: `local_regulatory`, `finance`, `operations`.
+  - Spotify works with stable role types: `finance`, `local_regulatory`, `operations`.
+  - Repeated EcoRide CFO questions no longer inflate the evidence board with duplicate revenue/runway facts.
 - Verified:
   - `./.venv/bin/python -m unittest discover tests`
   - `./.venv/bin/python -m compileall agents config.py database.py llm_client.py main.py routers tests`
@@ -93,7 +97,7 @@ This path is more important than professor upload, streaming, scoring, or UI pol
 
 ## 3. Immediate Next Step
 
-Re-run real smoke tests on both EcoRide and Spotify with Agent Role Contract v1.
+Start frontend/API integration for the interview loop.
 
 The product now exposes five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both map to the same product role type.
 
@@ -115,11 +119,18 @@ Completed implementation tasks:
 4. Select prompts by `role_type` first, then `name` and `title`.
 5. Added tests proving `City Official` and `Local Expert` both satisfy `local_regulatory`.
 
-Remaining validation:
+Validated:
 
-1. Re-run smoke test on EcoRide using `City Official`.
-2. Re-run smoke test on Spotify using `Local Expert`.
-3. Confirm frontend can display role names while optionally passing stable `role_type`.
+1. EcoRide works using stable `role_type` values.
+2. Spotify works using stable `role_type` values.
+3. Frontend can safely display case-specific role names while optionally passing stable `role_type`.
+
+Next integration target:
+
+1. Frontend lists stakeholder display names from the playbook.
+2. Frontend sends either `role.name` or `role.role_type` to `/sessions/{id}/messages`.
+3. Frontend renders `reply`, `new_evidence`, `roles_visited`, and `info_sufficient`.
+4. Frontend can fetch `/sessions/{id}/evidence` after each interview turn.
 
 ## 4. Smoke Test Runbook
 
@@ -364,10 +375,10 @@ Agent Role Contract v1 is implemented locally so the product can keep five stabl
 
 Priority order:
 
-1. Re-run EcoRide and Spotify smoke tests with role type routing.
-2. Confirm `/sessions/{id}/messages` works when `role_name` is a display name and when it is a stable `role_type`.
-3. Confirm role prompts remain natural for `City Official`, `Local Expert`, `Customer Rep`, and future case-specific names.
-4. Re-run a full demo path and inspect evidence quality across repeated questions.
+1. Wire the frontend interview screen to the validated backend message contract.
+2. Add a small API client wrapper for sessions, messages, and evidence.
+3. Render evidence board updates after each stakeholder reply.
+4. Add one frontend smoke path for EcoRide.
 
 The definition of done for this stage:
 
