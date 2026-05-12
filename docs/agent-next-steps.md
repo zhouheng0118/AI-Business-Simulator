@@ -5,7 +5,7 @@ Owner: Agent lead
 
 ## 1. Current Status
 
-The Agent foundation is now ready for the next product contract layer.
+The Agent interview loop is now validated end to end with the frontend, backend, Supabase, and Gemma model connected locally.
 
 Completed:
 
@@ -59,9 +59,18 @@ Completed:
   - EcoRide works with stable role types: `local_regulatory`, `finance`, `operations`.
   - Spotify works with stable role types: `finance`, `local_regulatory`, `operations`.
   - Repeated EcoRide CFO questions no longer inflate the evidence board with duplicate revenue/runway facts.
+- Integrated with the existing Next.js frontend:
+  - Student case/session screens can load backend data.
+  - Frontend can create and continue sessions.
+  - Frontend sends stakeholder questions to `/sessions/{id}/messages`.
+  - Frontend receives Gemma-backed stakeholder replies through FastAPI.
+  - Frontend refreshes `/sessions/{id}/evidence` after each interview turn and renders the deduplicated backend evidence board.
+  - User-tested locally: frontend can enter the app, connect to backend, and connect to the model.
 - Verified:
   - `./.venv/bin/python -m unittest discover tests`
   - `./.venv/bin/python -m compileall agents config.py database.py llm_client.py main.py routers tests`
+  - `npm run lint`
+  - `npm run build`
   - `git diff --check`
 
 Important security note:
@@ -97,7 +106,7 @@ This path is more important than professor upload, streaming, scoring, or UI pol
 
 ## 3. Immediate Next Step
 
-Start frontend/API integration for the interview loop.
+Start answer-submission and evidence-citation support.
 
 The product now exposes five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both map to the same product role type.
 
@@ -125,12 +134,20 @@ Validated:
 2. Spotify works using stable `role_type` values.
 3. Frontend can safely display case-specific role names while optionally passing stable `role_type`.
 
-Next integration target:
+Validated frontend integration:
 
 1. Frontend lists stakeholder display names from the playbook.
 2. Frontend sends either `role.name` or `role.role_type` to `/sessions/{id}/messages`.
 3. Frontend renders `reply`, `new_evidence`, `roles_visited`, and `info_sufficient`.
 4. Frontend can fetch `/sessions/{id}/evidence` after each interview turn.
+
+Next product target:
+
+1. Add an answering screen after `info_sufficient: true`.
+2. Let students answer playbook questions.
+3. Let students cite evidence board items in each answer.
+4. Persist answers to `submissions`.
+5. Defer scoring/debrief until answer capture and citations are reliable.
 
 ## 4. Smoke Test Runbook
 
@@ -140,6 +157,13 @@ Start the backend:
 cd backend
 source .venv/bin/activate
 python -m uvicorn main:app --reload
+```
+
+Start the frontend in another terminal:
+
+```bash
+cd frontend
+npm run dev
 ```
 
 Open:
@@ -344,9 +368,22 @@ GET /sessions/{id}/messages
 GET /sessions/{id}/evidence
 ```
 
+Frontend demo path:
+
+```text
+Open http://localhost:3000
+Register or log in as a student
+Open the student dashboard
+Choose EcoRide or Spotify
+Start or continue an interview session
+Ask CFO / Local-Regulatory / Operations questions
+Confirm evidence board updates
+Confirm Ready to answer appears after enough evidence
+```
+
 ## 8. What Not To Do Yet
 
-Do not spend time on these until the interview loop is stable:
+Do not spend time on these until answer submission and evidence citation are stable:
 
 - Professor upload.
 - Playbook generation from files.
@@ -354,9 +391,9 @@ Do not spend time on these until the interview loop is stable:
 - Supabase Realtime.
 - Multi-model UI.
 - Complex scoring reports.
-- Frontend polish.
+- Broad frontend polish.
 
-These are important later, but they do not prove the Agent works.
+These are important later, but they do not prove the core learning loop works.
 
 ## 9. Team Alignment Message
 
@@ -365,8 +402,8 @@ Use this message with teammates:
 ```text
 I have the Agent core, Gemma 4 API, Supabase access, and local Python 3.12 environment working.
 
-The real /sessions/{id}/messages path has been validated on the EcoRide case:
-FastAPI -> Supabase -> Orchestrator -> Gemma 4 -> Evidence -> Supabase.
+The real student interview path has been validated through the frontend:
+Next.js frontend -> FastAPI -> Supabase -> Orchestrator -> Gemma 4 -> Evidence -> Supabase -> frontend evidence board.
 
 Agent Role Contract v1 is implemented locally so the product can keep five stable stakeholder types while each case uses realistic role names such as City Official, Local Expert, Rider, or Customer Rep.
 ```
@@ -375,13 +412,13 @@ Agent Role Contract v1 is implemented locally so the product can keep five stabl
 
 Priority order:
 
-1. Wire the frontend interview screen to the validated backend message contract.
-2. Add a small API client wrapper for sessions, messages, and evidence.
-3. Render evidence board updates after each stakeholder reply.
-4. Add one frontend smoke path for EcoRide.
+1. Build the answer submission screen for playbook questions.
+2. Add evidence citation from the evidence board into each answer.
+3. Persist answer drafts/submissions to `submissions`.
+4. Add one end-to-end path: interview -> ready to answer -> submit answer with citations.
 
 The definition of done for this stage:
 
 ```text
-A student can create a session, interview the five stable stakeholder types using case-specific display names, receive Gemma 4 role-play answers, and see evidence accumulate without leaking locked information.
+A student can complete the interview loop in the frontend, proceed to answering, write responses to the case questions, cite evidence, and persist the submission.
 ```

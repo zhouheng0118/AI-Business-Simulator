@@ -8,6 +8,30 @@ AI Business Simulator transforms existing course materials into interactive busi
 
 Instead of reading a complete case study and writing an analysis, students navigate incomplete information, interview AI stakeholders, uncover hidden data, and make business decisions under uncertainty.
 
+## Current Status
+
+The MVP interview loop is now working end to end locally:
+
+```text
+Student frontend
+-> FastAPI backend
+-> Supabase session/playbook state
+-> Agent orchestrator
+-> Gemma 4 model call
+-> stakeholder reply
+-> evidence extraction and deduplication
+-> frontend evidence board update
+```
+
+Validated locally:
+
+- Student frontend can load cases and sessions from the backend.
+- Student interview screen can send stakeholder questions to the backend.
+- Backend can call the configured Gemma model and return stakeholder replies.
+- Evidence board updates after each interview turn.
+- Stable role types work across case-specific names, for example `City Official` and `Local Expert` both map to `local_regulatory`.
+- EcoRide and Spotify demo paths have both been tested through the Agent contract.
+
 ## The Problem It Solves
 
 Traditional case studies hand students a complete picture upfront. Real business decisions don't work that way — managers face conflicting information, partial data, competing stakeholder interests, and time pressure. This gap between classroom analysis and real decision-making is what AI Business Simulator is designed to close.
@@ -23,21 +47,23 @@ At the same time, generative AI has made it trivial to produce a polished case a
 
 **For students:**
 1. Enter the simulation and read the initial company background and task.
-2. Choose which AI stakeholder agents to interview — CEO, CFO, Operations Manager, Local Market Expert, Customer Representative.
+2. Choose which AI stakeholder agents to interview — CEO, CFO, Operations Manager, Local/Regulatory Expert, Customer/Market Voice.
 3. Ask questions in natural language. A master Agent controls information release: each stakeholder answers only within their role and knowledge boundary, and some critical information only surfaces when students ask the right questions.
 4. A Student Assistant tracks an Evidence Board — logging what has been discovered, from which source, and what risks it implies.
 5. When enough evidence is gathered, submit a final decision memo responding to the case questions with supporting evidence, risk assessment, and reflection.
 6. Receive a personalized debrief report scored against the professor's rubric, covering what evidence was used, what was overlooked, and how the reasoning process held up.
 
-## Core Agents (MVP)
+## Core Agent Types (MVP)
 
-| Agent | Role | Key tension |
+The product uses five stable role types internally while each case can display realistic stakeholder names.
+
+| Role type | Example names | Role | Key tension |
 |---|---|---|
-| CEO | Growth-focused executive | May downplay execution costs and local complexity |
-| CFO | Financial gatekeeper | Holds critical cash runway data; conservative on high-cost expansion |
-| Operations Manager | Execution realist | Surfaces underestimated supply chain and staffing challenges |
-| Local Market Expert | On-the-ground partner | Knows real rent and consumer preference gaps; has own incentives |
-| Customer Representative | Target user voice | Reveals price sensitivity and taste preference differences |
+| `strategy` | CEO, Founder, General Manager | Growth-focused sponsor | May downplay execution costs and local complexity |
+| `finance` | CFO, Finance Director | Financial gatekeeper | Holds critical runway/unit economics data; conservative on high-cost expansion |
+| `operations` | Head of Operations, VP Ops | Execution realist | Surfaces supply chain, staffing, launch, and maintenance risks |
+| `local_regulatory` | Local Expert, City Official, Regulator | Local and policy stakeholder | Knows regulation, local complexity, and market access constraints |
+| `customer_market` | Customer Rep, Rider, User Representative | Target user voice | Reveals willingness to pay, switching friction, and behavior gaps |
 
 ## Tech Stack
 
@@ -60,8 +86,13 @@ At the same time, generative AI has made it trivial to produce a polished case a
 │   │   ├── orchestrator.py   4-step main message flow
 │   │   └── sub_agents.py     Role prompt builder + LLM call
 │   └── routers/
+│       ├── assignments.py    Assignment lookup endpoints
 │       ├── cases.py          GET /cases, GET /cases/{id}
 │       └── sessions.py       Session and message endpoints
+├── frontend/                 Student/professor web app (Next.js)
+│   ├── src/app/student/...   Case reading and interview screens
+│   ├── src/app/dashboard/... Student/professor dashboards
+│   └── src/lib/api.ts        Backend API client
 ├── schema.sql                Supabase database schema
 ├── seeds.sql                 Demo case seed data (Spotify India)
 ├── backend.env.example       Backend environment variable template
@@ -117,6 +148,37 @@ python -m uvicorn main:app --reload
 
 API docs available at `http://localhost:8000/docs`.
 
+## Frontend Setup
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The frontend reads the backend URL from:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+The student interview screen uses the validated backend contract:
+
+```text
+POST /sessions/{session_id}/messages
+GET /sessions/{session_id}/evidence
+```
+
+After each stakeholder reply, the frontend refreshes the evidence board from the backend so it displays the deduplicated source of truth.
+
 ## API Endpoints (P1)
 
 | Endpoint | Method | Description |
@@ -136,8 +198,10 @@ Every student message to an agent goes through four steps:
 
 1. **Unlock evaluation** — LLM checks whether the student's message + history satisfies any locked information's unlock condition
 2. **Build allowed_info** — base allowed facts + any newly unlocked facts for this turn
-3. **Route to Sub-Agent** — inject controlled system prompt → call model → extract evidence → write to Supabase
+3. **Route to Sub-Agent** — resolve role by exact name or stable `role_type`, inject controlled system prompt, call model, extract evidence, write to Supabase
 4. **Sufficiency check** — if ≥3 roles interviewed and ≥3 evidence items collected, return `info_sufficient: true`
+
+The Agent does not put locked fact text into a sub-agent prompt before unlock. Locked facts are owned by the orchestrator and only become `allowed_info` after the unlock condition is satisfied.
 
 ## Database Schema
 

@@ -8,7 +8,7 @@ Build a business-school interview Agent that evaluates how students investigate 
 
 ## Current Build Priority
 
-The interview loop is the core product surface and has now passed a real smoke test on the EcoRide case:
+The interview loop is the core product surface and has now passed real frontend-to-model validation:
 
 ```text
 student question
@@ -21,15 +21,17 @@ student question
 -> sufficiency signal
 ```
 
-Do not prioritize uploads, scoring, streaming, or UI polish until this loop is stable.
+Do not prioritize uploads, scoring, streaming, or broad UI polish until answer submission and evidence citation are stable.
 
 Latest validated path:
 
+- Student frontend session screen
 - `GET /cases`
 - `POST /sessions`
 - `POST /sessions/{id}/messages`
 - `GET /sessions/{id}`
 - `GET /sessions/{id}/evidence`
+- Gemma-backed stakeholder reply rendered in the frontend
 
 EcoRide smoke test result:
 
@@ -44,6 +46,14 @@ Role Contract v1 regression result:
 - EcoRide passed with stable role types `local_regulatory`, `finance`, and `operations`.
 - Spotify passed with stable role types `finance`, `local_regulatory`, and `operations`.
 - EcoRide repeated CFO questions did not duplicate core `revenue per ride` or `runway` evidence after concept-level deduplication.
+
+Frontend integration result:
+
+- Existing Next.js frontend is merged into the Agent branch.
+- Student interview screen can connect to the FastAPI backend.
+- Backend can connect to Supabase and Gemma from the frontend-triggered flow.
+- Frontend sends stable `role_type` when available, while still displaying case-specific role names.
+- Frontend refreshes the backend evidence board after each message so semantic deduplication is reflected in the UI.
 
 ## Agent Design Principles
 
@@ -68,6 +78,8 @@ A session can:
 - Avoid exposing locked information before unlock.
 
 Status: Passed for EcoRide with `CFO`, `City Official`, and `Head of Operations`.
+
+Frontend status: Passed locally. The user confirmed the frontend can enter the app, connect to backend, and receive model-backed Agent responses.
 
 Important product learning:
 
@@ -125,11 +137,12 @@ Implementation notes:
 - `City Official` and `Local Expert` both resolve to `local_regulatory`.
 - `CFO` resolves to `finance`; `Head of Operations` resolves to `operations`.
 
-Next validation:
+Validation status:
 
-- Re-run EcoRide smoke test with `City Official`.
-- Re-run Spotify smoke test with `Local Expert`.
-- Test sending `role_name: "local_regulatory"` directly to confirm stable frontend routing can work.
+- EcoRide smoke test passed with `City Official`.
+- Spotify smoke test passed with `Local Expert`.
+- Sending stable role types such as `local_regulatory`, `finance`, and `operations` works.
+- Frontend session flow now sends stable role types when the playbook provides them.
 
 ## Phase 2: Boundary Hardening
 
@@ -189,3 +202,13 @@ Only build scoring after evidence is reliable:
 - Replay interview path.
 - Identify missed stakeholders and missed evidence.
 - Explain blind spots without overclaiming.
+
+## Phase 6: Frontend Answer Flow
+
+Next product priority:
+
+- Build an answer screen after the interview phase.
+- Render playbook questions from the case.
+- Let students cite evidence board items while answering.
+- Persist answers to `submissions`.
+- Only then build scoring and debrief on top of submitted answers and cited evidence.
