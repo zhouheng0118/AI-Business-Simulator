@@ -56,6 +56,7 @@ INSERT INTO playbooks (
   1,
   '[
     {
+      "role_type": "strategy",
       "name": "CEO",
       "title": "Chief Executive Officer",
       "persona": "Visionary, growth-focused, optimistic about India''s long-term potential",
@@ -73,6 +74,7 @@ INSERT INTO playbooks (
       "unlock_conditions": "Student must ask about strategic options including exit, AND must have already interviewed CFO"
     },
     {
+      "role_type": "finance",
       "name": "CFO",
       "title": "Chief Financial Officer",
       "persona": "Cautious, data-driven, focused on unit economics",
@@ -89,6 +91,7 @@ INSERT INTO playbooks (
       "unlock_conditions": "Student must ask specifically about profitability targets or loss figures"
     },
     {
+      "role_type": "operations",
       "name": "Head of Operations",
       "title": "Head of Operations",
       "persona": "Pragmatic, execution-focused, highlights on-the-ground challenges",
@@ -105,6 +108,7 @@ INSERT INTO playbooks (
       "unlock_conditions": "Student must ask about content library gaps or operational challenges"
     },
     {
+      "role_type": "customer_market",
       "name": "Customer Rep",
       "title": "Target Market Customer",
       "persona": "Price-sensitive, uses multiple free streaming apps simultaneously",
@@ -120,6 +124,7 @@ INSERT INTO playbooks (
       "unlock_conditions": "Student must ask about what would make them switch from free alternatives"
     },
     {
+      "role_type": "local_regulatory",
       "name": "Local Expert",
       "title": "Market Consultant",
       "persona": "Well-connected, nuanced view of India''s regional diversity",
