@@ -239,6 +239,82 @@ def get_assignments_by_student(student_id: str) -> list:
     )
 
 
+def save_submissions(session_id: str, answers: list[dict]) -> None:
+    """Save student answers — delete previous rows then insert fresh."""
+    _get_client().table("submissions").delete().eq("session_id", session_id).execute()
+    for ans in answers:
+        _get_client().table("submissions").insert(
+            {
+                "session_id": session_id,
+                "question_id": ans["question_id"],
+                "question_type": ans.get("question_type", "decision"),
+                "answer": ans["answer"],
+                "cited_evidence": ans.get("cited_evidence", []),
+            }
+        ).execute()
+
+
+def get_submissions(session_id: str) -> list:
+    return (
+        _get_client().table("submissions")
+        .select("*")
+        .eq("session_id", session_id)
+        .execute()
+        .data
+    )
+
+
+def save_report(
+    session_id: str,
+    scores: list,
+    total_score: float,
+    total_max: float,
+    interview_path: dict,
+    blind_spots: list,
+    overall_comment: str,
+) -> dict:
+    _get_client().table("reports").delete().eq("session_id", session_id).execute()
+    result = (
+        _get_client().table("reports")
+        .insert(
+            {
+                "session_id": session_id,
+                "scores": scores,
+                "total_score": total_score,
+                "total_max": total_max,
+                "interview_path": interview_path,
+                "blind_spots": blind_spots,
+                "overall_comment": overall_comment,
+            }
+        )
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+def get_report(session_id: str) -> dict | None:
+    result = (
+        _get_client().table("reports")
+        .select("*")
+        .eq("session_id", session_id)
+        .order("generated_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def submit_session(session_id: str) -> None:
+    from datetime import datetime, timezone
+
+    _get_client().table("sessions").update(
+        {
+            "status": "scored",
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", session_id).execute()
+
+
 def get_case_stats(case_id: str) -> dict:
     sessions = (
         _get_client().table("sessions")
