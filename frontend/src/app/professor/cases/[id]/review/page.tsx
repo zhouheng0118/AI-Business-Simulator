@@ -51,7 +51,7 @@ function RoleCard({ role }: { role: ApiPlaybookRole }) {
             </div>
             {role.persona && (
                 <p style={{ fontSize: 12, color: "#3d3d3f", margin: "0 0 10px", lineHeight: 1.5, fontStyle: "italic" }}>
-                    "{role.persona}"
+                    &ldquo;{role.persona}&rdquo;
                 </p>
             )}
             <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Focus Area</div>

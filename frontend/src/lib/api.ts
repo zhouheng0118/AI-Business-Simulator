@@ -33,7 +33,6 @@ export interface ApiPlaybookRole {
     role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
-    role_type?: string;
     persona?: string;
     focus_area: string;
     allowed_info?: string[];
