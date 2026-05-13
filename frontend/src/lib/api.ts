@@ -37,6 +37,14 @@ export interface ApiPlaybookRole {
     focus_area: string;
     allowed_info?: string[];
     locked_info?: string[];
+    unlock_conditions?: string;
+}
+
+export interface ApiInfoAtom {
+    fact: string;
+    owner_roles: string[];
+    access: "allowed" | "locked";
+    unlock_condition?: string;
 }
 
 export interface ApiPlaybook {
@@ -44,6 +52,7 @@ export interface ApiPlaybook {
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
+    info_atoms?: ApiInfoAtom[];
     questions: ApiQuestion[];
     review_status: string;
 }

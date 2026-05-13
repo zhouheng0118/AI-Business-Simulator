@@ -96,6 +96,7 @@ async def create_case_and_generate(body: CreateCaseIn):
         case_id=case["id"],
         roles=playbook_data["roles"],
         questions=playbook_data["questions"],
+        info_atoms=playbook_data.get("info_atoms") or [],
     )
 
     return {"case": case, "playbook": playbook}

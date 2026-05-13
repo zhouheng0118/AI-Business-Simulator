@@ -104,9 +104,11 @@ Student asks a stakeholder question
 
 This path is more important than professor upload, streaming, scoring, or UI polish.
 
-## 3. Immediate Next Step
+## 3. Current Product Step
 
 Answer-submission and evidence-citation support is now implemented.
+
+The professor-upload Main Agent is now upgraded from role-card generation to simulation-playbook generation.
 
 The product now exposes five stable stakeholder types while allowing each case to use realistic case-specific names. For example, EcoRide uses `City Official` where Spotify India uses `Local Expert`; both map to the same product role type.
 
@@ -149,6 +151,20 @@ Completed answer flow:
 4. Added `GET /sessions/{id}/submissions` and `POST /sessions/{id}/submissions`.
 5. Persisted submitted answers to `submissions` and moved the session to `submitted`.
 6. Deferred scoring/debrief until answer capture and citations are reliable.
+
+Completed Main Agent / Playbook Generator work:
+
+1. Professor-created cases now generate exactly five stable stakeholder role types.
+2. Generated roles include `allowed_info`, `locked_info`, and `unlock_conditions`.
+3. Generated playbooks include global `info_atoms` so the orchestrator has an auditable source of truth for allowed and locked facts.
+4. Professor review now exposes role boundaries, hidden facts, unlock conditions, and info atom counts before publishing.
+5. Regression tests freeze the expected playbook contract so upload generation cannot silently degrade into generic role cards.
+
+Next product target:
+
+1. Smoke test professor upload -> generated playbook -> approve -> student interview.
+2. Tune generated `locked_info` quality with real uploaded cases.
+3. Add professor editing controls for generated roles and info atoms.
 
 ## 4. Smoke Test Runbook
 

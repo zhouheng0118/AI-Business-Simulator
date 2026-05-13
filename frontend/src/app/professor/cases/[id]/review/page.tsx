@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { api, ApiCase, ApiPlaybook, ApiPlaybookRole, ApiQuestion } from "@/lib/api";
+import { api, ApiCase, ApiInfoAtom, ApiPlaybook, ApiPlaybookRole, ApiQuestion } from "@/lib/api";
 
 const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
     "CEO":                     { bg: "#eef4ff", border: "#bdd3ff", dot: "#0066cc" },
@@ -17,12 +17,13 @@ function rc(name: string) {
     return ROLE_COLORS[name] ?? { bg: "#f5f5f7", border: "#e0e0e0", dot: "#7a7a7a" };
 }
 
-type Tab = "overview" | "roles" | "questions";
+type Tab = "overview" | "roles" | "info" | "questions";
 
 function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
     const tabs: { key: Tab; label: string }[] = [
         { key: "overview",  label: "Overview" },
         { key: "roles",     label: "Stakeholder Roles" },
+        { key: "info",      label: "Info Boundaries" },
         { key: "questions", label: "Discussion Questions" },
     ];
     return (
@@ -70,6 +71,46 @@ function RoleCard({ role }: { role: ApiPlaybookRole }) {
                         ))}
                     </div>
                 </>
+            )}
+            {role.locked_info && role.locked_info.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(0,0,0,0.08)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                        Hidden until unlocked ({role.locked_info.length} facts)
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {role.locked_info.map((fact, i) => (
+                            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                                <span style={{ color: "#b75000", fontSize: 12, flexShrink: 0, marginTop: 1 }}>•</span>
+                                <span style={{ fontSize: 12, color: "#3d3d3f", lineHeight: 1.4 }}>{fact}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {role.unlock_conditions && (
+                        <div style={{ marginTop: 8, background: "rgba(255,255,255,0.55)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#5f6368", lineHeight: 1.4 }}>
+                            Unlock: {role.unlock_conditions}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function InfoAtomCard({ atom }: { atom: ApiInfoAtom }) {
+    const locked = atom.access === "locked";
+    return (
+        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 10, padding: "13px 15px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20, background: locked ? "#fff7ed" : "#edfaf3", color: locked ? "#9a3412" : "#166534" }}>
+                    {locked ? "Locked" : "Allowed"}
+                </span>
+                <span style={{ fontSize: 11, color: "#7a7a7a" }}>{atom.owner_roles.join(", ")}</span>
+            </div>
+            <p style={{ fontSize: 13, color: "#1d1d1f", lineHeight: 1.45, margin: 0 }}>{atom.fact}</p>
+            {locked && atom.unlock_condition && (
+                <p style={{ fontSize: 11, color: "#5f6368", lineHeight: 1.4, margin: "7px 0 0" }}>
+                    Unlock condition: {atom.unlock_condition}
+                </p>
             )}
         </div>
     );
@@ -225,7 +266,7 @@ export default function PlaybookReviewPage() {
                         <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                     </svg>
                     <p style={{ fontSize: 12, color: "#78350f", margin: 0, lineHeight: 1.5 }}>
-                        Review the AI-generated playbook below. Check that the stakeholder personas and allowed facts are accurate, then <strong>Approve & Publish</strong> to make this simulation available to students.
+                        Review the AI-generated playbook below. Check stakeholder personas, allowed facts, hidden facts, unlock conditions, and final questions before publishing.
                     </p>
                 </div>
 
@@ -261,10 +302,14 @@ export default function PlaybookReviewPage() {
 
                         <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px" }}>
                             <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>Generation Summary</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
                                 <div style={{ background: "#f5f5f7", borderRadius: 8, padding: "14px 16px", textAlign: "center" }}>
                                     <div style={{ fontSize: 28, fontWeight: 700, color: "#0066cc" }}>{roles.length}</div>
                                     <div style={{ fontSize: 11, color: "#7a7a7a", marginTop: 2 }}>Stakeholder Roles</div>
+                                </div>
+                                <div style={{ background: "#f5f5f7", borderRadius: 8, padding: "14px 16px", textAlign: "center" }}>
+                                    <div style={{ fontSize: 28, fontWeight: 700, color: "#0066cc" }}>{playbook.info_atoms?.length ?? 0}</div>
+                                    <div style={{ fontSize: 11, color: "#7a7a7a", marginTop: 2 }}>Info Atoms</div>
                                 </div>
                                 <div style={{ background: "#f5f5f7", borderRadius: 8, padding: "14px 16px", textAlign: "center" }}>
                                     <div style={{ fontSize: 28, fontWeight: 700, color: "#0066cc" }}>{questions.length}</div>
@@ -281,6 +326,20 @@ export default function PlaybookReviewPage() {
                             Each role is an AI agent students can interview. Review the persona and the facts each agent is allowed to share.
                         </p>
                         {roles.map((role) => <RoleCard key={role.name} role={role} />)}
+                    </>
+                )}
+
+                {tab === "info" && (
+                    <>
+                        <p style={{ fontSize: 12, color: "#7a7a7a", margin: "0 0 16px", lineHeight: 1.5 }}>
+                            Info atoms are the source of truth for what each agent can reveal. Locked atoms should require targeted student follow-up questions.
+                        </p>
+                        {(playbook.info_atoms ?? []).map((atom, i) => <InfoAtomCard key={`${atom.fact}-${i}`} atom={atom} />)}
+                        {(playbook.info_atoms ?? []).length === 0 && (
+                            <div style={{ background: "#ffffff", border: "1px dashed #d0d0d0", borderRadius: 10, padding: "18px 20px", fontSize: 13, color: "#7a7a7a", textAlign: "center" }}>
+                                No info atoms were generated for this playbook.
+                            </div>
+                        )}
                     </>
                 )}
 
