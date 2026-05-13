@@ -30,6 +30,7 @@ export interface ApiCase {
 }
 
 export interface ApiPlaybookRole {
+    role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
     persona?: string;
