@@ -87,7 +87,7 @@ export default function ProfessorDashboard() {
     const headerRight = (
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
-                onClick={() => alert("Upload & Setup coming soon.")}
+                onClick={() => router.push("/professor/cases/new")}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 18px", background: "#0066cc", color: "#fff", border: "none", borderRadius: 9999, fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "SF Pro Text, system-ui", letterSpacing: "-0.14px" }}
             >
                 <IconPlus /> Create New Simulation
@@ -128,6 +128,7 @@ export default function ProfessorDashboard() {
 }
 
 function SimCard({ data, stats }: { data: ApiCase; stats: ApiCaseStats }) {
+    const router = useRouter();
     const [hovered, setHovered] = useState(false);
     const submissionPct = stats.sessions_total > 0
         ? Math.round((stats.sessions_submitted / stats.sessions_total) * 100)
@@ -188,10 +189,10 @@ function SimCard({ data, stats }: { data: ApiCase; stats: ApiCaseStats }) {
                     {data.status === "published" && (
                         <ActionBtn label="View Analytics" primary onClick={() => alert(`Analytics for "${data.title}" coming soon.`)} />
                     )}
-                    <ActionBtn label={data.status === "draft" ? "Continue Editing" : "Edit"} onClick={() => alert(`Edit "${data.title}" coming soon.`)} />
-                    {data.status === "draft" && (
-                        <ActionBtn label="Publish" primary onClick={() => alert(`"${data.title}" would be published.`)} />
-                    )}
+                    <ActionBtn
+                        label={data.status === "draft" ? "Review Playbook" : "Edit"}
+                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
+                    />
                 </div>
             </div>
         </div>
