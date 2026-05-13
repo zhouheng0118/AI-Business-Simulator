@@ -24,6 +24,7 @@ const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string; acc
     "City Official":           { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
     "Customer Representative": { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
     "Customer Rep":            { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
+    "Rider":                   { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
     "Local Expert":            { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
 };
 
@@ -248,6 +249,7 @@ const EVIDENCE_CATEGORY: Record<string, { label: string; bg: string; color: stri
     "Operations Director":     { label: "Operational", bg: "#edfaf3", color: "#1d8a4f" },
     "Customer Representative": { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
     "Customer Rep":            { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
+    "Rider":                   { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
     "City Official":           { label: "Regulatory",  bg: "#edfafa", color: "#0e7490" },
     "Local Expert":            { label: "Market",      bg: "#eef4ff", color: "#0044a8" },
 };
@@ -259,6 +261,7 @@ const ROLE_DATA_HINTS: Record<string, string> = {
     "Operations Director":     "execution cost data missing",
     "Customer Representative": "demand validation missing",
     "Customer Rep":            "demand validation missing",
+    "Rider":                   "rider demand validation missing",
     "City Official":           "regulatory access data missing",
     "Local Expert":            "rental cost data missing",
 };
