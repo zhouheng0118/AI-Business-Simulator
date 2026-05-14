@@ -31,7 +31,10 @@ CREATE TABLE playbooks (
   -- fixed 5 role types: strategy / finance / operations / customer_market / local_regulatory
   info_atoms     JSONB DEFAULT '[]',
   -- Step 2 info atom list (for professor audit)
-  -- [{fact, owner_roles[], access('allowed'|'locked'), unlock_condition}]
+  -- [{fact, owner_roles[], access('allowed'|'locked'), unlock_condition, objective_index}]
+  checklist_items JSONB DEFAULT '[]',
+  -- Investigation checklist generated from teaching_goals
+  -- [{objective_index, task, completion_condition}]
   questions      JSONB NOT NULL DEFAULT '[]',
   -- [{id, type('decision'|'analysis'|'reflection'), text, rubric_dimensions:[{name,weight}]}]
   review_status  TEXT CHECK (review_status IN ('pending','approved','rejected')) DEFAULT 'pending',
@@ -61,8 +64,10 @@ CREATE TABLE sessions (
   student_id       TEXT NOT NULL,
   status           TEXT CHECK (status IN ('in_progress','answering','submitted','scored')) DEFAULT 'in_progress',
   evidence_board   JSONB DEFAULT '[]',
-  -- [{source, key_info, data, risk}]
+  -- [{source, key_info, data, risk, visible}]
   interviewed_roles TEXT[] DEFAULT '{}',
+  checklist_completed JSONB DEFAULT '[]',
+  -- [0, 2, 3, ...] — indices of completed checklist_items
   started_at       TIMESTAMPTZ DEFAULT now(),
   submitted_at     TIMESTAMPTZ
 );
