@@ -45,6 +45,7 @@ const DIFF_COLOR: Record<string, { bg: string; color: string }> = {
 };
 
 
+
 function TopBar({ user, onBack }: { user: User; onBack: () => void }) {
     const [hovered, setHovered] = useState(false);
     return (
@@ -243,19 +244,27 @@ export default function CaseDetailPage() {
                             </p>
                         </SectionCard>
 
-                        {c.teaching_goals.length > 0 && (
-                            <SectionCard title="Learning Objectives">
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                                    {c.teaching_goals.map((goal) => (
-                                        <span
-                                            key={goal}
-                                            style={{ fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 20, background: "#eef4ff", color: "#0044a8", border: "1px solid #bdd3ff" }}
-                                        >
-                                            {goal}
-                                        </span>
-                                    ))}
+                        {detail?.playbook?.questions?.[0]?.text && (
+                            <div style={{ background: "#fffbea", border: "1px solid #f0d060", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b75000" strokeWidth="2" strokeLinecap="round">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: "#7a4f00", letterSpacing: "0.06em", textTransform: "uppercase" }}>Your Objective</span>
                                 </div>
-                            </SectionCard>
+                                <p style={{ fontSize: 14, fontWeight: 500, color: "#3d2000", lineHeight: 1.65, margin: "0 0 12px" }}>
+                                    {detail.playbook.questions[0].text}
+                                </p>
+                                {c.teaching_goals.length > 0 && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                        {c.teaching_goals.map((goal) => (
+                                            <span key={goal} style={{ fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: "#fff3cd", color: "#7a4f00", border: "1px solid #f0d060" }}>
+                                                {goal}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         <SectionCard title="Available Interviewees">

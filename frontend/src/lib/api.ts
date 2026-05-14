@@ -16,6 +16,21 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     return res.json() as Promise<T>;
 }
 
+async function patch<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+    return res.json() as Promise<T>;
+}
+
+async function del(path: string): Promise<void> {
+    const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+}
+
 // Shapes returned by the backend
 
 export interface ApiCase {
@@ -37,6 +52,26 @@ export interface ApiPlaybookRole {
     focus_area: string;
     allowed_info?: string[];
     locked_info?: string[];
+    opening_statement?: string;
+    opening_role_description?: string;
+    opening_topics?: string[];
+    opening_suggested_question?: string;
+}
+
+export interface ApiInfoAtom {
+    fact: string;
+    owner_roles: string[];
+    access: "allowed" | "locked";
+    unlock_condition: string;
+    level: 0 | 1 | 2 | 3;
+    category: string;
+    objective_index: number;
+}
+
+export interface ApiChecklistItem {
+    objective_index: number;
+    task: string;
+    completion_condition: string;
 }
 
 export interface ApiPlaybook {
@@ -45,6 +80,8 @@ export interface ApiPlaybook {
     version: number;
     roles: ApiPlaybookRole[];
     questions: ApiQuestion[];
+    info_atoms: ApiInfoAtom[];
+    checklist_items: ApiChecklistItem[];
     review_status: string;
 }
 
@@ -76,6 +113,7 @@ export interface ApiEvidence {
     key_info: string;
     data: string;
     risk: string;
+    visible?: boolean;
 }
 
 export interface ApiSendMessageResponse {
@@ -84,6 +122,9 @@ export interface ApiSendMessageResponse {
     agent_name: string;
     info_sufficient: boolean;
     roles_visited: string[];
+    newly_unlocked: boolean;
+    newly_checked_items: number[];
+    checklist_completed: number[];
 }
 
 export interface ApiAssignment {
@@ -174,6 +215,10 @@ export const api = {
             get<ApiCaseDetail>(`/cases/${caseId}`),
         stats: (caseId: string) =>
             get<ApiCaseStats>(`/cases/${caseId}/stats`),
+        update: (caseId: string, payload: Partial<ApiCreateCasePayload>) =>
+            patch<ApiCase>(`/cases/${caseId}`, payload),
+        delete: (caseId: string) =>
+            del(`/cases/${caseId}`),
     },
     sessions: {
         byStudent: (studentId: string) =>
@@ -185,7 +230,7 @@ export const api = {
         getMessages: (sessionId: string) =>
             get<ApiMessage[]>(`/sessions/${sessionId}/messages`),
         getEvidence: (sessionId: string) =>
-            get<{ evidence_board: ApiEvidence[] }>(`/sessions/${sessionId}/evidence`),
+            get<{ evidence_board: ApiEvidence[]; checklist_items: ApiChecklistItem[]; checklist_completed: number[] }>(`/sessions/${sessionId}/evidence`),
         sendMessage: (sessionId: string, roleName: string, message: string) =>
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
         proceed: (sessionId: string) =>
@@ -207,6 +252,13 @@ export const api = {
             if (!res.ok) throw new Error(`API ${res.status}: /cases/parse-file`);
             return res.json();
         },
+        parseExcel: async (file: File): Promise<{ text: string; sheets: string[] }> => {
+            const form = new FormData();
+            form.append("file", file);
+            const res = await fetch(`${BASE}/cases/parse-excel`, { method: "POST", body: form });
+            if (!res.ok) throw new Error(`API ${res.status}: /cases/parse-excel`);
+            return res.json();
+        },
         createCase: (payload: ApiCreateCasePayload) =>
             post<ApiCreateCaseResponse>("/cases", payload),
         getPendingPlaybook: (caseId: string) =>
@@ -215,6 +267,11 @@ export const api = {
             post<ApiApproveResponse>(`/cases/${caseId}/playbook/${playbookId}/approve`, { publish: true }),
         rejectPlaybook: (caseId: string, playbookId: string, notes: string) =>
             post<{ status: string }>(`/cases/${caseId}/playbook/${playbookId}/reject`, { notes }),
+        updateInfoAtoms: (caseId: string, playbookId: string, infoAtoms: ApiInfoAtom[]) =>
+            patch<{ status: string; count: number }>(
+                `/cases/${caseId}/playbook/${playbookId}/info-atoms`,
+                { info_atoms: infoAtoms },
+            ),
     },
 };
 

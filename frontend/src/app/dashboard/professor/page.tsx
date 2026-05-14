@@ -120,16 +120,27 @@ export default function ProfessorDashboard() {
             {!loading && !error && rows.length === 0 && <EmptyState message="No simulations yet. Create your first one above." />}
             {!loading && !error && rows.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {rows.map((r) => <SimCard key={r.case.id} data={r.case} stats={r.stats} />)}
+                    {rows.map((r) => (
+                        <SimCard
+                            key={r.case.id}
+                            data={r.case}
+                            stats={r.stats}
+                            onDeleted={(id) => setRows((prev) => prev.filter((x) => x.case.id !== id))}
+                        />
+                    ))}
                 </div>
             )}
         </DashboardLayout>
     );
 }
 
-function SimCard({ data, stats }: { data: ApiCase; stats: ApiCaseStats }) {
+function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStats; onDeleted: (id: string) => void }) {
     const router = useRouter();
-    const [hovered, setHovered] = useState(false);
+    const [hovered, setHovered]       = useState(false);
+    const [confirmDelete, setConfirm] = useState(false);
+    const [deleting, setDeleting]     = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
     const submissionPct = stats.sessions_total > 0
         ? Math.round((stats.sessions_submitted / stats.sessions_total) * 100)
         : 0;
@@ -140,6 +151,19 @@ function SimCard({ data, stats }: { data: ApiCase; stats: ApiCaseStats }) {
     const diffColor: Record<string, string> = {
         Beginner: "#0066cc", Intermediate: "#7a3f00", Advanced: "#a30000",
     };
+
+    async function handleDelete() {
+        setDeleting(true);
+        setDeleteError(null);
+        try {
+            await api.cases.delete(data.id);
+            onDeleted(data.id);
+        } catch (err) {
+            setDeleteError(err instanceof Error ? err.message : "Delete failed");
+            setDeleting(false);
+            setConfirm(false);
+        }
+    }
 
     return (
         <div
@@ -185,14 +209,48 @@ function SimCard({ data, stats }: { data: ApiCase; stats: ApiCaseStats }) {
                     </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0, alignItems: "flex-end" }}>
                     {data.status === "published" && (
                         <ActionBtn label="View Analytics" primary onClick={() => alert(`Analytics for "${data.title}" coming soon.`)} />
                     )}
                     <ActionBtn
                         label={data.status === "draft" ? "Review Playbook" : "Edit"}
-                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
+                        onClick={() => router.push(
+                            data.status === "draft"
+                                ? `/professor/cases/${data.id}/review`
+                                : `/professor/cases/${data.id}/edit`
+                        )}
                     />
+
+                    {/* Delete button / inline confirm */}
+                    {!confirmDelete ? (
+                        <button
+                            onClick={() => setConfirm(true)}
+                            style={{ fontSize: 11, color: "#9e2a2b", background: "none", border: "1px solid #fecaca", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontFamily: "SF Pro Text, system-ui", fontWeight: 500 }}
+                        >
+                            Delete
+                        </button>
+                    ) : (
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "#9e2a2b", fontWeight: 500 }}>Delete?</span>
+                            <button
+                                onClick={handleDelete}
+                                disabled={deleting}
+                                style={{ fontSize: 11, color: "#fff", background: "#dc2626", border: "none", borderRadius: 6, padding: "4px 10px", cursor: deleting ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", fontWeight: 600 }}
+                            >
+                                {deleting ? "…" : "Yes"}
+                            </button>
+                            <button
+                                onClick={() => setConfirm(false)}
+                                style={{ fontSize: 11, color: "#7a7a7a", background: "#f5f5f7", border: "1px solid #e0e0e0", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "SF Pro Text, system-ui" }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    )}
+                    {deleteError && (
+                        <span style={{ fontSize: 11, color: "#9e2a2b", maxWidth: 180, textAlign: "right" }}>{deleteError}</span>
+                    )}
                 </div>
             </div>
         </div>

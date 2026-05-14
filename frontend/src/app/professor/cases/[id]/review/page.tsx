@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { api, ApiCase, ApiPlaybook, ApiPlaybookRole, ApiQuestion } from "@/lib/api";
+import { api, ApiCase, ApiPlaybook, ApiPlaybookRole, ApiQuestion, ApiInfoAtom } from "@/lib/api";
+import InfoLayersTab from "@/components/InfoLayersTab";
 
 const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
     "CEO":                     { bg: "#eef4ff", border: "#bdd3ff", dot: "#0066cc" },
@@ -17,13 +18,14 @@ function rc(name: string) {
     return ROLE_COLORS[name] ?? { bg: "#f5f5f7", border: "#e0e0e0", dot: "#7a7a7a" };
 }
 
-type Tab = "overview" | "roles" | "questions";
+type Tab = "overview" | "roles" | "questions" | "layers";
 
 function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
     const tabs: { key: Tab; label: string }[] = [
         { key: "overview",  label: "Overview" },
         { key: "roles",     label: "Stakeholder Roles" },
         { key: "questions", label: "Discussion Questions" },
+        { key: "layers",    label: "Information Layers" },
     ];
     return (
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e0e0e0", marginBottom: 20 }}>
@@ -122,6 +124,8 @@ export default function PlaybookReviewPage() {
     const [tab, setTab]             = useState<Tab>("overview");
     const [loading, setLoading]     = useState(true);
     const [approving, setApproving] = useState(false);
+    const [atomsSaving, setAtomsSaving] = useState(false);
+    const [atomsError, setAtomsError]   = useState<string | null>(null);
     const [error, setError]         = useState<string | null>(null);
 
     useEffect(() => {
@@ -157,6 +161,21 @@ export default function PlaybookReviewPage() {
             router.push("/dashboard/professor");
         } catch {
             setError("Failed to reject. Please try again.");
+        }
+    }
+
+    async function handleSaveAtoms(atoms: ApiInfoAtom[]) {
+        if (!playbook || atomsSaving) return;
+        setAtomsSaving(true);
+        setAtomsError(null);
+        try {
+            await api.professor.updateInfoAtoms(caseId, playbook.id, atoms);
+            setPlaybook({ ...playbook, info_atoms: atoms });
+        } catch {
+            setAtomsError("Failed to save. Please try again.");
+            throw new Error("save failed");
+        } finally {
+            setAtomsSaving(false);
         }
     }
 
@@ -292,7 +311,27 @@ export default function PlaybookReviewPage() {
                         {questions.map((q, i) => <QuestionCard key={q.id} question={q} index={i} />)}
                     </>
                 )}
-                
+
+                {tab === "layers" && (
+                    <>
+                        <p style={{ fontSize: 12, color: "#7a7a7a", margin: "0 0 16px" }}>
+                            Review and edit how case facts are distributed between the basic layer (visible to students upfront) and the hidden layer (unlocked through conversation).
+                        </p>
+                        {atomsError && (
+                            <div style={{ background: "#fff5f5", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#991b1b" }}>
+                                {atomsError}
+                            </div>
+                        )}
+                        <InfoLayersTab
+                            key={playbook.id}
+                            atoms={playbook.info_atoms ?? []}
+                            roles={roles}
+                            saving={atomsSaving}
+                            onSave={handleSaveAtoms}
+                        />
+                    </>
+                )}
+
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
                     <button
                         onClick={handleReject}

@@ -65,22 +65,49 @@ export default function NewCasePage() {
     const [goalInput, setGoalInput]   = useState("");
     const [showPaste, setShowPaste]   = useState(false);
 
+    const [excelContent, setExcelContent]   = useState("");
+    const [excelSheets, setExcelSheets]     = useState<string[]>([]);
+    const [excelFileName, setExcelFileName] = useState("");
+    const [parsingExcel, setParsingExcel]   = useState(false);
+
     const [generating, setGenerating] = useState(false);
     const [parsing, setParsing]       = useState(false);
     const [dragOver, setDragOver]     = useState(false);
     const [error, setError]           = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef      = useRef<HTMLInputElement>(null);
+    const excelInputRef     = useRef<HTMLInputElement>(null);
 
     const user = getCurrentUser();
     if (user && user.role !== "professor") { router.push("/dashboard/student"); }
 
-    // Derive rawContent: all file texts concatenated + paste text
+    // Derive rawContent: all file texts + paste text + optional Excel financial data
     const rawContent = [
         ...uploadedFiles.map((f) =>
             `=== ${f.required ? "Case Study" : `Supplementary Material: ${f.name}`} ===\n${f.text}`
         ),
         ...(pasteText.trim() ? [`=== Additional Notes ===\n${pasteText.trim()}`] : []),
+        ...(excelContent.trim() ? [`=== Financial Data (Excel: ${excelFileName}) ===\n${excelContent.trim()}`] : []),
     ].join("\n\n");
+
+    async function handleExcelFile(file: File) {
+        if (!file.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
+            setError("Excel upload only supports .xlsx or .xls files.");
+            return;
+        }
+        setParsingExcel(true);
+        setError(null);
+        try {
+            const result = await api.professor.parseExcel(file);
+            setExcelContent(result.text);
+            setExcelSheets(result.sheets);
+            setExcelFileName(file.name);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setError(`Could not read Excel file: ${msg}. Make sure the backend is running and openpyxl is installed.`);
+        } finally {
+            setParsingExcel(false);
+        }
+    }
 
     async function handleFiles(files: FileList | File[]) {
         const arr = Array.from(files);
@@ -377,6 +404,67 @@ export default function NewCasePage() {
                                 </div>
                             )}
                         </div>
+                    )}
+                </div>
+
+                {/* Optional Excel Upload */}
+                <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+                        Financial Data
+                        <span style={{ fontWeight: 400, textTransform: "none", marginLeft: 8, fontSize: 11, color: "#a0a0a8" }}>Optional</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#7a7a7a", marginBottom: 14 }}>
+                        Upload an Excel file with financial tables (income statement, balance sheet, etc.). The AI will use this data to enrich the CFO and other agent responses.
+                    </div>
+
+                    <input
+                        ref={excelInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        style={{ display: "none" }}
+                        onChange={(e) => { if (e.target.files?.[0]) handleExcelFile(e.target.files[0]); e.target.value = ""; }}
+                    />
+
+                    {excelContent ? (
+                        <div style={{ border: "1px solid #e0e0e0", borderRadius: 8, overflow: "hidden" }}>
+                            <div style={{ display: "flex", alignItems: "center", padding: "11px 16px", gap: 12, background: "#ffffff" }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d8a4f" strokeWidth="1.8" strokeLinecap="round">
+                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                    <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" />
+                                </svg>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 500, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{excelFileName}</div>
+                                    <div style={{ fontSize: 11, color: "#a0a0a8", marginTop: 1 }}>{excelSheets.length} sheet{excelSheets.length !== 1 ? "s" : ""}: {excelSheets.join(", ")}</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => excelInputRef.current?.click()}
+                                    style={{ fontSize: 11, color: "#0066cc", background: "none", border: "none", cursor: "pointer", fontFamily: "SF Pro Text, system-ui" }}
+                                >
+                                    Replace
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setExcelContent(""); setExcelSheets([]); setExcelFileName(""); }}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: "#a0a0a8", fontSize: 18, lineHeight: 1, padding: "0 2px" }}
+                                >×</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => excelInputRef.current?.click()}
+                            disabled={parsingExcel}
+                            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8, border: "1px dashed #d0d0d8", background: "#fafafa", color: parsingExcel ? "#a0a0a8" : "#3d3d3f", fontSize: 12, fontWeight: 500, cursor: parsingExcel ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", transition: "all 0.12s" }}
+                        >
+                            {parsingExcel ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0066cc" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 0.9s linear infinite" }}><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" /><path d="M21 12a9 9 0 00-9-9" /></svg>
+                            ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                            )}
+                            {parsingExcel ? "Reading Excel…" : "Upload Excel file (.xlsx / .xls)"}
+                        </button>
                     )}
                 </div>
 
