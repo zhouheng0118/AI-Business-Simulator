@@ -5,6 +5,7 @@ node_modules/
 
 # Python
 __pycache__/
+backend/__pycache__/
 *.py[cod]
 *.pyo
 .venv/
