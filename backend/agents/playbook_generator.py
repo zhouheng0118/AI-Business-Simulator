@@ -31,6 +31,8 @@ _ROLE_GUIDANCE = {
     "Local Expert":            "Local regulations, licensing, rental costs, market nuances",
 }
 
+_DEFAULT_UNLOCK = "Student asks a specific follow-up about this risk, constraint, or metric."
+
 _OPENING_ROLE_GUIDANCE = {
     "CEO":                     "One sentence: your strategic role in this specific case's decision context.",
     "CFO":                     "One sentence: your financial oversight role and the key financial dimension at stake in this case.",
@@ -631,6 +633,11 @@ async def generate_playbook(
                 "opening_role_description": "<one sentence: this stakeholder's specific role in the context of this case>",
                 "opening_topics": ["<case-specific topic 1>", "<case-specific topic 2>", "<case-specific topic 3>", "<case-specific topic 4>"],
                 "opening_suggested_question": "<one specific question a student could start with to learn something important from this stakeholder>",
+                "locked_info": [
+                    "<specific deeper fact or implication that should only emerge after a good follow-up>",
+                    "<another deeper risk, tradeoff, or constraint>"
+                ],
+                "unlock_conditions": "<one sentence describing what the student must ask for this role to reveal locked_info>",
             }
             for name, title_, rt in _FIXED_ROLES
         ],
@@ -646,7 +653,7 @@ Teaching Goals: {goals_text}
 Case Content:
 {content_excerpt}
 
-Generate a background summary, exactly 5 stakeholder roles, and 1 discussion question.
+Generate a background summary, exactly 5 stakeholder roles, and 2-3 discussion questions.
 
 Each role's domain focus:
 {role_guidance}
@@ -658,6 +665,20 @@ Return ONLY valid JSON, no markdown:
 {{
   "background_summary": "<150-200 word student-facing case background: company context, the central decision or challenge, and why it matters now — use only publicly available facts, no hidden information>",
   "roles": {roles_schema},
+  "info_atoms": [
+    {{
+      "fact": "<specific factual atom from this case>",
+      "owner_roles": ["<one role name from the roles list>"],
+      "access": "allowed",
+      "unlock_condition": ""
+    }},
+    {{
+      "fact": "<specific hidden/deeper factual atom from this case>",
+      "owner_roles": ["<one role name from the roles list>"],
+      "access": "locked",
+      "unlock_condition": "<what the student must ask to unlock this fact>"
+    }}
+  ],
   "questions": [
     {{
       "id": "q1",
@@ -675,12 +696,18 @@ Return ONLY valid JSON, no markdown:
 
 Requirements:
 - background_summary: 150-200 words, written for a student who has not read the case. No hidden or locked information.
+- Use exactly these 5 role names and role_type values from the schema
 - Each role's allowed_info: 4-5 specific, concrete facts grounded in THIS case (names, numbers, constraints)
+- Each role's locked_info: 1-3 deeper facts, risks, tradeoffs, or implications from the case
+- Each role must have a concrete unlock_conditions sentence
 - Each role's opening_role_description: one sentence, case-specific, describing this stakeholder's role in THIS case's context
 - Each role's opening_topics: 4-6 specific topics drawn from THIS case's facts, not generic role descriptions
 - Each role's opening_suggested_question: one concrete, case-specific question the student can start with
+- info_atoms must include both allowed and locked facts and must use owner_roles that match the role names or role_type values
+- Facts must be grounded in THIS case (names, numbers, constraints mentioned in the content)
 - The CEO and CFO may share some overlapping strategic/financial facts
-- The question must be specific to this case's central dilemma — not generic"""
+- Generate 2-3 final questions when possible: one decision question, one analysis question, and optionally one reflection question
+- Questions must be specific to this case's central dilemma — not generic"""
 
     raw = await complete(prompt, max_tokens=3500)
     playbook = _parse_playbook(raw)
@@ -733,6 +760,7 @@ def _parse_playbook(raw: str) -> dict:
 
     background_summary = str(data.get("background_summary") or "").strip()
     roles = _validate_roles(data.get("roles") or [])
+    info_atoms = _validate_info_atoms(data.get("info_atoms") or [], roles)
     questions = _validate_questions(data.get("questions") or [])
 
     return {"background_summary": background_summary, "roles": roles, "questions": questions}
@@ -743,10 +771,20 @@ def _validate_roles(raw_roles: list) -> list:
 
     for name, title_, rt in _FIXED_ROLES:
         matched = next(
-            (r for r in raw_roles if isinstance(r, dict) and r.get("name", "").strip() == name),
+            (
+                r
+                for r in raw_roles
+                if isinstance(r, dict)
+                and (
+                    r.get("name", "").strip() == name
+                    or r.get("role_type", "").strip() == rt
+                )
+            ),
             None,
         )
         if matched:
+            allowed_info = _string_list(matched.get("allowed_info"))[:6]
+            locked_info = _string_list(matched.get("locked_info"))[:4]
             result.append(
                 {
                     "name": name,
@@ -754,9 +792,13 @@ def _validate_roles(raw_roles: list) -> list:
                     "role_type": rt,
                     "persona": str(matched.get("persona") or ""),
                     "focus_area": str(matched.get("focus_area") or _ROLE_GUIDANCE[name]),
-                    "allowed_info": [
-                        str(x) for x in (matched.get("allowed_info") or []) if x
-                    ][:6],
+                    "allowed_info": allowed_info,
+                    "locked_info": locked_info,
+                    "unlock_conditions": str(
+                        matched.get("unlock_conditions")
+                        or matched.get("unlock_condition")
+                        or _DEFAULT_UNLOCK
+                    ),
                     "opening_statement": str(matched.get("opening_statement") or ""),
                     "opening_role_description": str(matched.get("opening_role_description") or ""),
                     "opening_topics": [str(t) for t in (matched.get("opening_topics") or []) if t][:8],
@@ -772,6 +814,8 @@ def _validate_roles(raw_roles: list) -> list:
                     "persona": "",
                     "focus_area": _ROLE_GUIDANCE[name],
                     "allowed_info": [],
+                    "locked_info": [],
+                    "unlock_conditions": _DEFAULT_UNLOCK,
                     "opening_statement": "",
                     "opening_role_description": "",
                     "opening_topics": [],
@@ -780,6 +824,87 @@ def _validate_roles(raw_roles: list) -> list:
             )
 
     return result
+
+
+def _validate_info_atoms(raw_atoms: list, roles: list) -> list:
+    """Return normalized info atoms, supplementing from role facts when needed."""
+    role_by_name = {role["name"]: role for role in roles}
+    role_types = {role["role_type"] for role in roles}
+    atoms = []
+    seen = set()
+
+    for atom in raw_atoms:
+        if not isinstance(atom, dict):
+            continue
+
+        fact = str(atom.get("fact") or "").strip()
+        if not fact:
+            continue
+
+        access = str(atom.get("access") or "allowed").strip().lower()
+        if access not in ("allowed", "locked"):
+            access = "allowed"
+
+        owners = [
+            str(owner).strip()
+            for owner in (atom.get("owner_roles") or [])
+            if str(owner).strip()
+        ]
+        owners = [
+            owner for owner in owners
+            if owner in role_by_name or owner in role_types
+        ]
+        if not owners:
+            continue
+
+        unlock_condition = str(atom.get("unlock_condition") or "").strip()
+        if access == "locked" and not unlock_condition:
+            unlock_condition = _DEFAULT_UNLOCK
+
+        key = (fact.lower(), access, tuple(sorted(owners)))
+        if key in seen:
+            continue
+        seen.add(key)
+        atoms.append(
+            {
+                "fact": fact,
+                "owner_roles": owners,
+                "access": access,
+                "unlock_condition": unlock_condition,
+            }
+        )
+
+    for role in roles:
+        for fact in role.get("allowed_info") or []:
+            key = (fact.lower(), "allowed", (role["name"],))
+            if key in seen:
+                continue
+            seen.add(key)
+            atoms.append(
+                {
+                    "fact": fact,
+                    "owner_roles": [role["name"], role["role_type"]],
+                    "access": "allowed",
+                    "unlock_condition": "",
+                }
+            )
+
+        for fact in role.get("locked_info") or []:
+            unlock_condition = role.get("unlock_conditions") or _DEFAULT_UNLOCK
+            key = (fact.lower(), "locked", (role["name"],))
+            if key in seen:
+                continue
+            seen.add(key)
+            atoms.append(
+                {
+                    "fact": fact,
+                    "owner_roles": [role["name"], role["role_type"]],
+                    "access": "locked",
+                    "unlock_condition": unlock_condition,
+                }
+            )
+
+    return atoms
 
 
 def _validate_questions(raw_questions: list) -> list:
@@ -823,24 +948,23 @@ def _validate_questions(raw_questions: list) -> list:
 
 
 def _fallback_playbook() -> dict:
+    roles = [
+        {
+            "name": name,
+            "title": title_,
+            "role_type": rt,
+            "persona": "",
+            "focus_area": _ROLE_GUIDANCE[name],
+            "allowed_info": [],
+            "locked_info": [],
+            "unlock_conditions": _DEFAULT_UNLOCK,
+        }
+        for name, title_, rt in _FIXED_ROLES
+    ]
     return {
         "background_summary": "",
-        "info_atoms": [],
-        "roles": [
-            {
-                "name": name,
-                "title": title_,
-                "role_type": rt,
-                "persona": "",
-                "focus_area": _ROLE_GUIDANCE[name],
-                "allowed_info": [],
-                "opening_statement": "",
-                "opening_role_description": "",
-                "opening_topics": [],
-                "opening_suggested_question": "",
-            }
-            for name, title_, rt in _FIXED_ROLES
-        ],
+        "roles": roles,
+        "info_atoms": _validate_info_atoms([], roles),
         "questions": _fallback_questions(),
     }
 
@@ -859,3 +983,9 @@ def _fallback_questions() -> list:
             ],
         }
     ]
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]

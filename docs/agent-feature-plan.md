@@ -8,7 +8,9 @@ Build a business-school interview Agent that evaluates how students investigate 
 
 ## Current Build Priority
 
-The interview loop is the core product surface and has now passed real frontend-to-model validation:
+The interview loop is stable enough that the current product priority is the professor-upload Main Agent: converting raw case material into a complete simulation playbook.
+
+The validated student loop remains:
 
 ```text
 student question
@@ -21,7 +23,7 @@ student question
 -> sufficiency signal
 ```
 
-Do not prioritize uploads, scoring, streaming, or broad UI polish until answer submission and evidence citation are stable.
+Do not prioritize streaming or broad UI polish until professor-uploaded cases can reliably generate high-quality playbooks.
 
 Latest validated path:
 
@@ -54,6 +56,14 @@ Frontend integration result:
 - Backend can connect to Supabase and Gemma from the frontend-triggered flow.
 - Frontend sends stable `role_type` when available, while still displaying case-specific role names.
 - Frontend refreshes the backend evidence board after each message so semantic deduplication is reflected in the UI.
+
+Main Agent / Playbook Generator result:
+
+- Professor-created cases generate exactly five stable stakeholder role types.
+- Each generated role can include allowed facts, hidden facts, and unlock conditions.
+- Generated playbooks persist `info_atoms` so the orchestrator can control information release from an auditable source of truth.
+- Professor review surfaces roles, info boundaries, info atoms, questions, and rubrics before publish.
+- Backend tests enforce the full playbook contract.
 
 ## Agent Design Principles
 

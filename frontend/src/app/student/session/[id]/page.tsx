@@ -24,6 +24,7 @@ const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string; acc
     "City Official":           { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
     "Customer Representative": { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
     "Customer Rep":            { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
+    "Rider":                   { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8", accent: "#6b21a8" },
     "Local Expert":            { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490", accent: "#0e7490" },
 };
 
@@ -369,6 +370,7 @@ function CheckIcon({ done, isNew }: { done: boolean; isNew: boolean }) {
         <div style={{ width: 18, height: 18, borderRadius: "50%", border: "1.5px solid #d0d0d0", background: "#fff", flexShrink: 0 }} />
     );
 }
+
 
 function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, teachingGoals, roles, rolesVisited }: {
     checklistItems: ApiChecklistItem[];

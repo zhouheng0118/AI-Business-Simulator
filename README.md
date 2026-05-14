@@ -29,6 +29,7 @@ Validated locally:
 - Student interview screen can send stakeholder questions to the backend.
 - Backend can call the configured Gemma model and return stakeholder replies.
 - Evidence board updates after each interview turn.
+- Professor upload can generate a reviewable playbook with 5 stakeholder roles, info atoms, hidden facts, unlock conditions, and final questions.
 - Stable role types work across case-specific names, for example `City Official` and `Local Expert` both map to `local_regulatory`.
 - EcoRide and Spotify demo paths have both been tested through the Agent contract.
 
@@ -42,8 +43,8 @@ At the same time, generative AI has made it trivial to produce a polished case a
 
 **For professors:**
 1. Upload existing course materials — case PDFs, slides, assignment prompts, financial data, grading rubrics.
-2. The system's orchestrating Agent parses the materials and generates a simulation playbook: student role, company background, task objective, stakeholder agents, hidden information, evidence points, and scoring rubric.
-3. The professor reviews and confirms the generated setup before students begin.
+2. The system's Playbook Generator parses the materials and generates a simulation playbook: stakeholder agents, allowed facts, hidden facts, unlock conditions, info atoms, final questions, and scoring rubric.
+3. The professor reviews the generated roles, information boundaries, and questions before publishing the case to students.
 
 **For students:**
 1. Enter the simulation and read the initial company background and task.
@@ -83,6 +84,7 @@ The product uses five stable role types internally while each case can display r
 │   ├── database.py           All Supabase read/write operations
 │   ├── requirements.txt
 │   ├── agents/
+│   │   ├── playbook_generator.py  Professor-upload main Agent
 │   │   ├── orchestrator.py   4-step main message flow
 │   │   └── sub_agents.py     Role prompt builder + LLM call
 │   └── routers/

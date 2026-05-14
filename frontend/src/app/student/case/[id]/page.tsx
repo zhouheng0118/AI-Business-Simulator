@@ -22,6 +22,9 @@ const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string }> =
     "CFO":                     { bg: "#edfaf3", border: "#b9efd4", dot: "#1d8a4f" },
     "Operations Director":     { bg: "#fff7ed", border: "#fcd9a8", dot: "#c05c00" },
     "Customer Representative": { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
+    "Customer Rep":            { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
+    "Rider":                   { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
+    "City Official":           { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490" },
     "Local Expert":            { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490" },
 };
 

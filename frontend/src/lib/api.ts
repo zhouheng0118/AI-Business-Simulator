@@ -45,13 +45,14 @@ export interface ApiCase {
 }
 
 export interface ApiPlaybookRole {
+    role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
-    role_type?: string;
     persona?: string;
     focus_area: string;
     allowed_info?: string[];
     locked_info?: string[];
+    unlock_conditions?: string;
     opening_statement?: string;
     opening_role_description?: string;
     opening_topics?: string[];
@@ -79,9 +80,9 @@ export interface ApiPlaybook {
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
-    questions: ApiQuestion[];
     info_atoms: ApiInfoAtom[];
     checklist_items: ApiChecklistItem[];
+    questions: ApiQuestion[];
     review_status: string;
 }
 
