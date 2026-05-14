@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 """Centralized LLM access for CaseIQ agents.
 
 All model calls should go through this module so provider, model name, retry
 policy, and fallback behavior can be changed in one place.
 """
 
-from __future__ import annotations
-
+import asyncio
 import os
 import re
 import logging
@@ -110,26 +111,44 @@ async def chat(
     if not MODEL_API_KEY:
         return _mock_reply(system_prompt, user_message)
 
-    try:
-        from openai import AsyncOpenAI
+    from openai import AsyncOpenAI, RateLimitError
 
-        client = AsyncOpenAI(base_url=MODEL_BASE_URL, api_key=MODEL_API_KEY)
-        response = await client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        raw = response.choices[0].message.content or ""
-        return _strip_hidden_thoughts(raw) or FALLBACK_REPLY
-    except Exception as exc:
-        logger.exception(
-            "Model chat completion failed for model=%s base_url=%s: %s",
-            MODEL_NAME,
-            MODEL_BASE_URL,
-            exc,
-        )
-        return FALLBACK_REPLY
+    client = AsyncOpenAI(base_url=MODEL_BASE_URL, api_key=MODEL_API_KEY)
+
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            raw = response.choices[0].message.content or ""
+            return _strip_hidden_thoughts(raw) or FALLBACK_REPLY
+        except RateLimitError as exc:
+            # Parse retry delay from the error message (e.g. "retry in 43.3s")
+            match = re.search(r"retry in (\d+(?:\.\d+)?)", str(exc), re.IGNORECASE)
+            wait = float(match.group(1)) if match else 30.0
+            wait = min(wait + 2, 90)  # add 2s buffer, cap at 90s
+            logger.warning(
+                "Rate limit hit (attempt %d/3) for model=%s; waiting %.0fs before retry",
+                attempt + 1, MODEL_NAME, wait,
+            )
+            if attempt < 2:
+                await asyncio.sleep(wait)
+            else:
+                logger.error("Rate limit persisted after 3 attempts; returning fallback")
+                return FALLBACK_REPLY
+        except Exception as exc:
+            logger.exception(
+                "Model chat completion failed for model=%s base_url=%s: %s",
+                MODEL_NAME,
+                MODEL_BASE_URL,
+                exc,
+            )
+            return FALLBACK_REPLY
+
+    return FALLBACK_REPLY
 
 
 async def complete(

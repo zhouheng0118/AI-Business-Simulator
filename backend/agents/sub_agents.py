@@ -66,7 +66,7 @@ End your response with exactly this self-check line:
 <boundary_check>NO</boundary_check>"""
 
 
-def _build_system_prompt(role: dict, allowed_info: list) -> str:
+def _build_system_prompt(role: dict, allowed_info: list, raw_content: str = "") -> str:
     """Build a role-specific system prompt with controlled information."""
     allowed_str = (
         "\n".join(f"- {info}" for info in allowed_info)
@@ -82,7 +82,7 @@ def _build_system_prompt(role: dict, allowed_info: list) -> str:
     )
 
     template = _load_prompt_template(role)
-    return template.format(
+    prompt = template.format(
         name=role.get("name", ""),
         title=role.get("title", ""),
         persona=role.get("persona", ""),
@@ -91,6 +91,14 @@ def _build_system_prompt(role: dict, allowed_info: list) -> str:
         locked_info=locked_str,
         unlock_conditions=role.get("unlock_conditions", ""),
     )
+
+    if raw_content:
+        prompt += (
+            "\n\n[Case Reference Data — use to answer specific factual questions accurately]\n"
+            + raw_content
+        )
+
+    return prompt
 
 
 def _strip_boundary_check(text: str) -> str:
@@ -110,10 +118,10 @@ def _message_belongs_to_role_thread(msg: dict, role_name: str) -> bool:
 
 
 async def call_sub_agent(
-    role: dict, allowed_info: list, history: list, student_message: str
+    role: dict, allowed_info: list, history: list, student_message: str, raw_content: str = ""
 ) -> str:
     """Call one stakeholder sub-agent with a role prompt and scoped history."""
-    system_prompt = _build_system_prompt(role, allowed_info)
+    system_prompt = _build_system_prompt(role, allowed_info, raw_content)
 
     # Include only messages for this role's conversation thread (last 10 turns)
     filtered_history = []

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any
 import re
@@ -162,11 +164,18 @@ def create_session(case_id: str, student_id: str) -> dict:
                 "status": "in_progress",
                 "evidence_board": [],
                 "interviewed_roles": [],
+                "checklist_completed": [],
             }
         )
         .execute()
         .data[0]
     )
+
+
+def update_checklist_completed(session_id: str, completed_indices: list[int]) -> None:
+    _get_client().table("sessions").update(
+        {"checklist_completed": completed_indices}
+    ).eq("id", session_id).execute()
 
 
 def _evidence_key(item: dict) -> tuple[str, str]:
@@ -459,7 +468,7 @@ def create_case(
     return result.data[0]
 
 
-def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list | None = None) -> dict:
+def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list | None = None, checklist_items: list | None = None) -> dict:
     result = (
         _get_client().table("playbooks")
         .insert(
@@ -469,6 +478,7 @@ def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list
                 "roles": roles,
                 "questions": questions,
                 "info_atoms": info_atoms or [],
+                "checklist_items": checklist_items or [],
                 "review_status": "pending",
             }
         )
@@ -521,6 +531,45 @@ def reject_playbook(playbook_id: str, notes: str = "") -> None:
 
 def publish_case(case_id: str) -> None:
     _get_client().table("cases").update({"status": "published"}).eq("id", case_id).execute()
+
+
+def update_case_description(case_id: str, description: str) -> None:
+    _get_client().table("cases").update({"description": description}).eq("id", case_id).execute()
+
+
+def update_case(case_id: str, fields: dict) -> dict:
+    result = (
+        _get_client().table("cases")
+        .update(fields)
+        .eq("id", case_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+def delete_case(case_id: str) -> None:
+    client = _get_client()
+    # Delete child records first to avoid FK constraint violations
+    client.table("playbooks").delete().eq("case_id", case_id).execute()
+    client.table("case_assignments").delete().eq("case_id", case_id).execute()
+    sessions = client.table("sessions").select("id").eq("case_id", case_id).execute().data
+    for s in sessions:
+        sid = s["id"]
+        client.table("messages").delete().eq("session_id", sid).execute()
+        client.table("submissions").delete().eq("session_id", sid).execute()
+        client.table("reports").delete().eq("session_id", sid).execute()
+    client.table("sessions").delete().eq("case_id", case_id).execute()
+    client.table("cases").delete().eq("id", case_id).execute()
+
+
+def update_playbook_info_atoms(playbook_id: str, info_atoms: list) -> None:
+    result = (
+        _get_client().table("playbooks").update(
+            {"info_atoms": info_atoms}
+        ).eq("id", playbook_id).execute()
+    )
+    if not result.data:
+        raise RuntimeError(f"Playbook {playbook_id} not found during info_atoms update")
 
 
 def get_case_stats(case_id: str) -> dict:

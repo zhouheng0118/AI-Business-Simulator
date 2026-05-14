@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 import database as db
@@ -73,7 +75,13 @@ def get_evidence(session_id: str):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return {"evidence_board": session.get("evidence_board") or []}
+    playbook = db.get_playbook_by_case(session["case_id"])
+    checklist_items = (playbook.get("checklist_items") or []) if playbook else []
+    return {
+        "evidence_board": session.get("evidence_board") or [],
+        "checklist_items": checklist_items,
+        "checklist_completed": session.get("checklist_completed") or [],
+    }
 
 
 @router.get("/{session_id}/submissions")

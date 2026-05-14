@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import re
 import database as db
@@ -59,11 +61,27 @@ async def _compute_allowed_info(
     session: dict,
     history: list,
     current_message: str,
-) -> list:
-    """Compute facts this role is allowed to reveal in the current turn."""
-    allowed = list(role.get("allowed_info", []))
+) -> tuple[list, bool]:
+    """Compute facts this role is allowed to reveal in the current turn.
 
-    # Check each locked atom owned by this role for unlock
+    Returns (allowed_info, had_unlock) where had_unlock is True when at least
+    one previously-locked atom was unlocked during this turn.
+
+    info_atoms is the single source of truth for the basic layer when present
+    (professor edits are reflected here). Falls back to role.allowed_info for
+    legacy playbooks that pre-date info_atoms.
+    """
+    if info_atoms:
+        allowed = [
+            a["fact"]
+            for a in info_atoms
+            if _info_atom_owned_by_role(a, role) and a.get("access") == "allowed"
+        ]
+    else:
+        allowed = list(role.get("allowed_info", []))
+
+    had_unlock = False
+
     locked_atoms = [
         a
         for a in info_atoms
@@ -75,14 +93,20 @@ async def _compute_allowed_info(
             condition, session, history, current_message
         ):
             allowed.append(atom["fact"])
+            had_unlock = True
 
-    return allowed
+    return allowed, had_unlock
 
 
 # Step 3 (post): Extract evidence from reply
 
-async def _extract_evidence(reply: str, role_name: str) -> list:
-    """Extract decision-relevant evidence items from an agent reply."""
+async def _extract_evidence(reply: str, role_name: str, visible: bool = False) -> list:
+    """Extract decision-relevant evidence items from an agent reply.
+
+    visible=True means this evidence was unlocked this turn and should be
+    displayed on the Evidence Board immediately. visible=False items are saved
+    but hidden until an unlock event occurs.
+    """
     prompt = f"""Extract key factual claims from this stakeholder response in a business case simulation.
 
 Role: {role_name}
@@ -98,13 +122,13 @@ Return [] if nothing concrete was stated.
 Return ONLY valid JSON with no markdown or explanation."""
 
     raw = await _llm(prompt, max_tokens=600)
-    evidence = _parse_evidence(raw, role_name)
+    evidence = _parse_evidence(raw, role_name, visible=visible)
     if evidence:
         return evidence
-    return _fallback_extract_evidence(reply, role_name)
+    return _fallback_extract_evidence(reply, role_name, visible=visible)
 
 
-def _parse_evidence(raw: str, role_name: str) -> list:
+def _parse_evidence(raw: str, role_name: str, visible: bool = False) -> list:
     """Parse, validate, and deduplicate evidence JSON from the extractor."""
     text = raw.strip()
     if text.startswith("```"):
@@ -141,6 +165,7 @@ def _parse_evidence(raw: str, role_name: str) -> list:
                 "key_info": key_info,
                 "data": data,
                 "risk": risk,
+                "visible": visible,
             }
         )
 
@@ -156,7 +181,7 @@ def _is_valid_evidence(key_info: str, data: str, risk: str) -> bool:
     return bool(data or risk or re.search(r"\d", key_info))
 
 
-def _fallback_extract_evidence(reply: str, role_name: str) -> list:
+def _fallback_extract_evidence(reply: str, role_name: str, visible: bool = False) -> list:
     """Extract a small amount of evidence without an LLM when extraction fails."""
     if not reply.strip() or reply.strip() == FALLBACK_REPLY:
         return []
@@ -179,6 +204,7 @@ def _fallback_extract_evidence(reply: str, role_name: str) -> list:
                 "key_info": sentence,
                 "data": data,
                 "risk": risk,
+                "visible": visible,
             }
         )
         if len(evidence) >= 3:
@@ -235,7 +261,33 @@ def _coerce_evidence_list(value: object) -> list:
     return []
 
 
-# Step 4: Sufficiency check
+# Step 4: Checklist evaluation
+
+async def _check_checklist_items(
+    checklist_items: list,
+    already_completed: list[int],
+    session: dict,
+    history: list,
+    current_message: str,
+) -> list[int]:
+    """Return updated list of completed checklist item indices.
+
+    Evaluates only items not yet completed.
+    """
+    completed = list(already_completed)
+    completed_set = set(completed)
+
+    for idx, item in enumerate(checklist_items):
+        if idx in completed_set:
+            continue
+        condition = item.get("completion_condition", "")
+        if condition and await _is_unlock_condition_met(condition, session, history, current_message):
+            completed.append(idx)
+
+    return completed
+
+
+# Step 5: Sufficiency check
 
 def _is_info_sufficient(session: dict) -> bool:
     """Return whether the session has enough interviews and evidence."""
@@ -330,6 +382,7 @@ async def handle_student_message(
     roles: list = playbook.get("roles") or []
     info_atoms: list = playbook.get("info_atoms") or []
     session: dict = case_context.get("session") or {}
+    raw_content: str = case_context.get("raw_content") or ""
 
     role = _find_role(roles, target_role)
     if role is None:
@@ -340,11 +393,11 @@ async def handle_student_message(
             "role_found": False,
         }
 
-    allowed_info = await _compute_allowed_info(
+    allowed_info, had_unlock = await _compute_allowed_info(
         role, info_atoms, session, history, user_message
     )
-    reply = await call_sub_agent(role, allowed_info, history, user_message)
-    evidence_items = await _extract_evidence(reply, role["name"])
+    reply = await call_sub_agent(role, allowed_info, history, user_message, raw_content=raw_content)
+    evidence_items = await _extract_evidence(reply, role["name"], visible=had_unlock)
 
     return {
         "reply": reply,
@@ -352,6 +405,7 @@ async def handle_student_message(
         "agent_name": role["name"],
         "role_type": infer_role_type(role),
         "role_found": True,
+        "newly_unlocked": had_unlock,
     }
 
 
@@ -372,6 +426,7 @@ async def handle_message(
 
     history = db.get_messages(session_id)
 
+    case = db.get_case(session["case_id"])
     result = await handle_student_message(
         target_role=role_name,
         user_message=student_message,
@@ -380,6 +435,7 @@ async def handle_message(
             "case_id": session["case_id"],
             "playbook": playbook,
             "session": session,
+            "raw_content": (case or {}).get("raw_content", ""),
         },
     )
     reply = result["reply"]
@@ -392,7 +448,20 @@ async def handle_message(
     if result.get("role_found", True):
         db.update_evidence_and_roles(session_id, new_evidence, agent_name)
 
-    # 4 Check if student has gathered enough to proceed to answering
+    # 4 Evaluate checklist progress
+    checklist_items: list = playbook.get("checklist_items") or []
+    already_completed: list = list(session.get("checklist_completed") or [])
+    newly_checked: list[int] = []
+    if checklist_items:
+        updated_history = db.get_messages(session_id)
+        new_completed = await _check_checklist_items(
+            checklist_items, already_completed, session, updated_history, student_message
+        )
+        newly_checked = [i for i in new_completed if i not in set(already_completed)]
+        if newly_checked:
+            db.update_checklist_completed(session_id, new_completed)
+
+    # 5 Check if student has gathered enough to proceed to answering
     updated_session = db.get_session(session_id)
     info_sufficient = _is_info_sufficient(updated_session)
 
@@ -402,4 +471,7 @@ async def handle_message(
         "agent_name": agent_name,
         "info_sufficient": info_sufficient,
         "roles_visited": updated_session.get("interviewed_roles") or [],
+        "newly_unlocked": result.get("newly_unlocked", False),
+        "newly_checked_items": newly_checked,
+        "checklist_completed": list(updated_session.get("checklist_completed") or already_completed + newly_checked),
     }
