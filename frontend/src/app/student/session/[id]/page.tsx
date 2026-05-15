@@ -376,13 +376,14 @@ function CheckIcon({ done, isNew }: { done: boolean; isNew: boolean }) {
 }
 
 
-function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, teachingGoals, roles, rolesVisited }: {
+function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, teachingGoals, roles, rolesVisited, checklistProcessing }: {
     checklistItems: ApiChecklistItem[];
     checklistCompleted: number[];
     newlyCheckedItems: Set<number>;
     teachingGoals: string[];
     roles: ApiPlaybookRole[];
     rolesVisited: string[];
+    checklistProcessing: boolean;
 }) {
     const completedSet = new Set(checklistCompleted);
     const progressPct = roles.length > 0 ? (rolesVisited.length / roles.length) * 100 : 0;
@@ -420,8 +421,16 @@ function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, t
 
                 {/* Header */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                        Investigation Checklist
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                            Investigation Checklist
+                        </div>
+                        {checklistProcessing && (
+                            <div title="Evaluating checklist…" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#0066cc", animation: "checklistPulse 1s ease-in-out infinite" }} />
+                                <style>{`@keyframes checklistPulse{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:1;transform:scale(1.2)}}`}</style>
+                            </div>
+                        )}
                     </div>
                     {totalItems > 0 && (
                         <span style={{ fontSize: 10, color: completedCount === totalItems ? "#1d8a4f" : "#7a7a7a", fontWeight: 600 }}>
@@ -584,6 +593,7 @@ export default function SessionPage() {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [inputText, setInputText]     = useState("");
     const [sending, setSending]         = useState(false);
+    const [checklistProcessing, setChecklistProcessing] = useState(false);
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState<string | null>(null);
 
@@ -637,6 +647,7 @@ export default function SessionPage() {
             }]);
             setRolesVisited(res.roles_visited);
             setInfoSufficient(res.info_sufficient);
+            setChecklistProcessing(true);
 
             // Evidence and checklist are processed in the background on the server.
             // Poll after a short delay to pick up the results.
@@ -658,6 +669,8 @@ export default function SessionPage() {
                     setInfoSufficient((prev) => prev || hasSufficientEvidence(res.roles_visited, visibleEvidence));
                 } catch {
                     // Non-critical: evidence board will refresh on next interaction
+                } finally {
+                    setChecklistProcessing(false);
                 }
             }, 4000);
         } catch {
@@ -735,6 +748,7 @@ export default function SessionPage() {
                         teachingGoals={caseDetail?.case?.teaching_goals ?? []}
                         roles={roles}
                         rolesVisited={rolesVisited}
+                        checklistProcessing={checklistProcessing}
                     />
                 </div>
             )}

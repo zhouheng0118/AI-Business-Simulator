@@ -35,28 +35,47 @@ def _normalize_text(value: object) -> str:
 
 # Step 1: Intent / unlock evaluation 
 
-async def _is_unlock_condition_met(
-    condition: str, session: dict, history: list, current_message: str
-) -> bool:
-    """Return whether a locked information condition is satisfied."""
+async def _check_conditions_batch(
+    conditions: list[str], session: dict, history: list, current_message: str
+) -> list[bool]:
+    """Evaluate multiple unlock/checklist conditions in a single LLM call."""
+    if not conditions:
+        return []
     recent = "\n".join(
         f"[{m['role'].upper()} / {m.get('agent_name', '')}]: {m['content']}"
         for m in history[-12:]
     )
-    prompt = f"""You are evaluating whether an unlock condition in a business case simulation has been satisfied.
+    numbered = "\n".join(f"{i + 1}. {cond}" for i, cond in enumerate(conditions))
+    prompt = f"""You are evaluating unlock conditions in a business case simulation.
 
-Unlock condition: "{condition}"
-
-Roles the student has already interviewed: {session.get("interviewed_roles", [])}
+Roles interviewed so far: {session.get("interviewed_roles", [])}
 Student's current message: "{current_message}"
 
 Recent conversation:
 {recent}
 
-Has the unlock condition been met? Reply with only YES or NO."""
+For each condition below, answer true if it is met, false if not:
+{numbered}
 
-    result = await _llm(prompt, max_tokens=5)
-    return result.upper().startswith("YES")
+Reply with ONLY a JSON array of booleans in order. Example for 3 conditions: [true, false, true]"""
+
+    raw = await _llm(prompt, max_tokens=60)
+    try:
+        parsed = json.loads(raw.strip())
+        if isinstance(parsed, list) and len(parsed) == len(conditions):
+            return [bool(r) for r in parsed]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Fallback: assume none met
+    return [False] * len(conditions)
+
+
+async def _is_unlock_condition_met(
+    condition: str, session: dict, history: list, current_message: str
+) -> bool:
+    """Return whether a locked information condition is satisfied."""
+    results = await _check_conditions_batch([condition], session, history, current_message)
+    return results[0] if results else False
 
 
 # Step 2: Build allowed_info for this turn
@@ -117,9 +136,8 @@ async def _compute_allowed_info(
     if not pending:
         return allowed, False
 
-    results = await asyncio.gather(
-        *[_is_unlock_condition_met(cond, session, history, current_message) for _, cond in pending]
-    )
+    conditions = [cond for _, cond in pending]
+    results = await _check_conditions_batch(conditions, session, history, current_message)
     had_unlock = False
     for (atom, _), is_met in zip(pending, results):
         if is_met:
@@ -316,9 +334,8 @@ async def _check_checklist_items(
     if not pending:
         return completed
 
-    results = await asyncio.gather(
-        *[_is_unlock_condition_met(cond, session, history, current_message) for _, cond in pending]
-    )
+    conditions = [cond for _, cond in pending]
+    results = await _check_conditions_batch(conditions, session, history, current_message)
     for (idx, _), is_met in zip(pending, results):
         if is_met:
             completed.append(idx)
