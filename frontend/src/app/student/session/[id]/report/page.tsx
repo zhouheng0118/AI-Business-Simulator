@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { api, ApiReport, ApiDimensionScore } from "@/lib/api";
+import SectionCard from "@/components/SectionCard";
 
 const ROLE_DOT: Record<string, string> = {
     CEO:                     "#0066cc",
@@ -68,16 +69,6 @@ function DimensionBar({ dim }: { dim: ApiDimensionScore }) {
     );
 }
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 14 }}>
-                {title}
-            </div>
-            {children}
-        </div>
-    );
-}
 
 
 export default function ReportPage() {
