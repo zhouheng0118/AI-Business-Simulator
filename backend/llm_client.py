@@ -41,6 +41,9 @@ FALLBACK_REPLY = "I need to think about that more carefully. Could you rephrase 
 
 logger = logging.getLogger(__name__)
 
+# Cap concurrent LLM calls to avoid bursting the rate limit when asyncio.gather fires many at once
+_LLM_SEMAPHORE = asyncio.Semaphore(2)
+
 
 def _strip_hidden_thoughts(text: str) -> str:
     """Remove provider-emitted hidden reasoning tags from visible output."""
@@ -117,12 +120,13 @@ async def chat(
 
     for attempt in range(3):
         try:
-            response = await client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            async with _LLM_SEMAPHORE:
+                response = await client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
             raw = response.choices[0].message.content or ""
             return _strip_hidden_thoughts(raw) or FALLBACK_REPLY
         except RateLimitError as exc:
