@@ -219,7 +219,8 @@ Requirements:
 - level must be 0 for allowed, 1/2/3 for locked
 - Each atom belongs to 1-2 roles maximum
 - objective_index must match one of the goal indices above
-- category must be one of the five allowed categories for allowed atoms; empty string for locked atoms"""
+- category must be one of the five allowed categories for allowed atoms; empty string for locked atoms
+- Each "fact" must be ≤ 25 words; each "unlock_condition" must be ≤ 25 words"""
 
     raw = await complete(prompt, max_tokens=max_tokens, temperature=0.2)
     atoms = _parse_info_atoms_multi(raw, num_objectives=max(1, len(goals)))
@@ -251,11 +252,18 @@ def _parse_info_atoms_multi(raw: str, num_objectives: int = 1) -> list:
         fact = str(item.get("fact") or "").strip()
         if not fact or len(fact.split()) < 4:
             continue
+        # Hard cap: truncate to 25 words to keep atoms concise
+        fact_words = fact.split()
+        if len(fact_words) > 25:
+            fact = " ".join(fact_words[:25])
         access = item.get("access", "allowed")
         if access not in ("allowed", "locked"):
             access = "allowed"
         owner_roles = [str(r) for r in (item.get("owner_roles") or []) if r]
         unlock_condition = str(item.get("unlock_condition") or "").strip()
+        uc_words = unlock_condition.split()
+        if len(uc_words) > 25:
+            unlock_condition = " ".join(uc_words[:25])
 
         raw_level = item.get("level")
         if access == "allowed":
@@ -315,11 +323,17 @@ def _parse_info_atoms(raw: str, objective_index: int = 0) -> list:
         fact = str(item.get("fact") or "").strip()
         if not fact or len(fact.split()) < 4:
             continue
+        fact_words = fact.split()
+        if len(fact_words) > 25:
+            fact = " ".join(fact_words[:25])
         access = item.get("access", "allowed")
         if access not in ("allowed", "locked"):
             access = "allowed"
         owner_roles = [str(r) for r in (item.get("owner_roles") or []) if r]
         unlock_condition = str(item.get("unlock_condition") or "").strip()
+        uc_words = unlock_condition.split()
+        if len(uc_words) > 25:
+            unlock_condition = " ".join(uc_words[:25])
 
         # level: 0=allowed; 1=ask right topic; 2=question assumption; 3=cross-reference agents
         # Clamp unknown locked values to 1.
