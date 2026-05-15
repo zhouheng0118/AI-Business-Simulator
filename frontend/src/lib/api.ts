@@ -126,6 +126,7 @@ export interface ApiSendMessageResponse {
     newly_unlocked: boolean;
     newly_checked_items: number[];
     checklist_completed: number[];
+    unlock_check_ms?: number;
 }
 
 export interface ApiAssignment {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from collections import defaultdict
 import database as db
 
@@ -450,9 +451,12 @@ async def handle_student_message(
             "role_found": False,
         }
 
+    t0 = time.monotonic()
     allowed_info, had_unlock = await _compute_allowed_info(
         role, info_atoms, session, history, user_message
     )
+    unlock_check_ms = int((time.monotonic() - t0) * 1000)
+
     reply = await call_sub_agent(role, allowed_info, history, user_message, raw_content=raw_content)
 
     evidence_items: list = []
@@ -466,6 +470,7 @@ async def handle_student_message(
         "role_type": infer_role_type(role),
         "role_found": True,
         "newly_unlocked": had_unlock,
+        "unlock_check_ms": unlock_check_ms,
     }
 
 
@@ -563,4 +568,5 @@ async def handle_message(
         "newly_unlocked": result.get("newly_unlocked", False),
         "newly_checked_items": [],
         "checklist_completed": list(session.get("checklist_completed") or []),
+        "unlock_check_ms": result.get("unlock_check_ms", 0),
     }

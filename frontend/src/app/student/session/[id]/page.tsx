@@ -269,10 +269,11 @@ function OpeningCard({ role, onSuggestedQuestion }: {
 
 // Chat window
 
-function ChatWindow({ messages, selectedRole, sending, role, onSuggestedQuestion }: {
+function ChatWindow({ messages, selectedRole, sending, thinkingMs, role, onSuggestedQuestion }: {
     messages: ApiMessage[];
     selectedRole: string | null;
     sending: boolean;
+    thinkingMs: number;
     role?: ApiPlaybookRole;
     onSuggestedQuestion?: (q: string) => void;
 }) {
@@ -306,7 +307,7 @@ function ChatWindow({ messages, selectedRole, sending, role, onSuggestedQuestion
             {filtered.map((msg) => (
                 <ChatBubble key={msg.id} msg={msg} roleName={selectedRole} />
             ))}
-            {sending && <TypingIndicator roleName={selectedRole} />}
+            {sending && <TypingIndicator roleName={selectedRole} thinkingMs={thinkingMs} />}
             <div ref={bottomRef} />
         </div>
     );
@@ -333,19 +334,34 @@ function ChatBubble({ msg, roleName }: { msg: ApiMessage; roleName: string }) {
     );
 }
 
-function TypingIndicator({ roleName }: { roleName: string }) {
+function TypingIndicator({ roleName, thinkingMs }: { roleName: string; thinkingMs: number }) {
     const c = rc(roleName);
+    const [phase, setPhase] = useState<"thinking" | "typing">("thinking");
+
+    useEffect(() => {
+        const t = setTimeout(() => setPhase("typing"), thinkingMs);
+        return () => clearTimeout(t);
+    }, [thinkingMs]);
+
     return (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {roleName.charAt(0)}
             </div>
-            <div style={{ background: "#f0f0f5", borderRadius: "14px 14px 14px 4px", padding: "10px 14px", display: "flex", gap: 4, alignItems: "center" }}>
-                {[0, 1, 2].map((i) => (
-                    <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#b0b0b0", animation: `typingBounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
-                ))}
-                <style>{`@keyframes typingBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
-            </div>
+            {phase === "thinking" ? (
+                <div style={{ background: "#f0f0f5", borderRadius: "14px 14px 14px 4px", padding: "9px 13px", display: "flex", alignItems: "center", gap: 8, minWidth: 160 }}>
+                    <div style={{ width: 13, height: 13, border: "2px solid #d0d0d0", borderTopColor: "#0066cc", borderRadius: "50%", flexShrink: 0, animation: "thinkSpin 0.75s linear infinite" }} />
+                    <span style={{ fontSize: 12, color: "#7a7a7a", fontStyle: "italic" }}>Evaluating context…</span>
+                    <style>{`@keyframes thinkSpin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+            ) : (
+                <div style={{ background: "#f0f0f5", borderRadius: "14px 14px 14px 4px", padding: "10px 14px", display: "flex", gap: 4, alignItems: "center" }}>
+                    {[0, 1, 2].map((i) => (
+                        <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#b0b0b0", animation: `typingBounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+                    ))}
+                    <style>{`@keyframes typingBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
+                </div>
+            )}
         </div>
     );
 }
@@ -593,6 +609,7 @@ export default function SessionPage() {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [inputText, setInputText]     = useState("");
     const [sending, setSending]         = useState(false);
+    const [lastUnlockMs, setLastUnlockMs] = useState(3500);
     const [checklistProcessing, setChecklistProcessing] = useState(false);
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState<string | null>(null);
@@ -647,6 +664,7 @@ export default function SessionPage() {
             }]);
             setRolesVisited(res.roles_visited);
             setInfoSufficient(res.info_sufficient);
+            if (res.unlock_check_ms) setLastUnlockMs(res.unlock_check_ms);
             setChecklistProcessing(true);
 
             // Evidence and checklist are processed in the background on the server.
@@ -730,6 +748,7 @@ export default function SessionPage() {
                             messages={messages}
                             selectedRole={selectedRole}
                             sending={sending}
+                            thinkingMs={lastUnlockMs}
                             role={roles.find((r) => r.name === selectedRole)}
                             onSuggestedQuestion={(q) => setInputText(q)}
                         />
