@@ -235,6 +235,15 @@ export const api = {
             get<{ evidence_board: ApiEvidence[]; checklist_items: ApiChecklistItem[]; checklist_completed: number[] }>(`/sessions/${sessionId}/evidence`),
         sendMessage: (sessionId: string, roleName: string, message: string) =>
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
+        sendMessageStream: (sessionId: string, roleName: string, message: string): Promise<ReadableStream<Uint8Array>> =>
+            fetch(`${BASE}/sessions/${sessionId}/messages/stream`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ role_name: roleName, message }),
+            }).then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.body!;
+            }),
         proceed: (sessionId: string) =>
             post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
         submit: (sessionId: string, answers: ApiSubmitAnswer[]) =>

@@ -269,11 +269,12 @@ function OpeningCard({ role, onSuggestedQuestion }: {
 
 // Chat window
 
-function ChatWindow({ messages, selectedRole, sending, thinkingMs, role, onSuggestedQuestion }: {
+function ChatWindow({ messages, selectedRole, sending, unlockDone, streamingContent, role, onSuggestedQuestion }: {
     messages: ApiMessage[];
     selectedRole: string | null;
     sending: boolean;
-    thinkingMs: number;
+    unlockDone: boolean;
+    streamingContent: string;
     role?: ApiPlaybookRole;
     onSuggestedQuestion?: (q: string) => void;
 }) {
@@ -307,7 +308,8 @@ function ChatWindow({ messages, selectedRole, sending, thinkingMs, role, onSugge
             {filtered.map((msg) => (
                 <ChatBubble key={msg.id} msg={msg} roleName={selectedRole} />
             ))}
-            {sending && <TypingIndicator roleName={selectedRole} thinkingMs={thinkingMs} />}
+            {sending && !streamingContent && <TypingIndicator roleName={selectedRole} unlockDone={unlockDone} />}
+            {sending && streamingContent && <StreamingBubble roleName={selectedRole} content={streamingContent} />}
             <div ref={bottomRef} />
         </div>
     );
@@ -334,21 +336,14 @@ function ChatBubble({ msg, roleName }: { msg: ApiMessage; roleName: string }) {
     );
 }
 
-function TypingIndicator({ roleName, thinkingMs }: { roleName: string; thinkingMs: number }) {
+function TypingIndicator({ roleName, unlockDone }: { roleName: string; unlockDone: boolean }) {
     const c = rc(roleName);
-    const [phase, setPhase] = useState<"thinking" | "typing">("thinking");
-
-    useEffect(() => {
-        const t = setTimeout(() => setPhase("typing"), thinkingMs);
-        return () => clearTimeout(t);
-    }, [thinkingMs]);
-
     return (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {roleName.charAt(0)}
             </div>
-            {phase === "thinking" ? (
+            {!unlockDone ? (
                 <div style={{ background: "#f0f0f5", borderRadius: "14px 14px 14px 4px", padding: "9px 13px", display: "flex", alignItems: "center", gap: 8, minWidth: 160 }}>
                     <div style={{ width: 13, height: 13, border: "2px solid #d0d0d0", borderTopColor: "#0066cc", borderRadius: "50%", flexShrink: 0, animation: "thinkSpin 0.75s linear infinite" }} />
                     <span style={{ fontSize: 12, color: "#7a7a7a", fontStyle: "italic" }}>Evaluating context…</span>
@@ -362,6 +357,22 @@ function TypingIndicator({ roleName, thinkingMs }: { roleName: string; thinkingM
                     <style>{`@keyframes typingBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
                 </div>
             )}
+        </div>
+    );
+}
+
+function StreamingBubble({ roleName, content }: { roleName: string; content: string }) {
+    const c = rc(roleName);
+    return (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {roleName.charAt(0)}
+            </div>
+            <div style={{ maxWidth: "72%", background: "#f0f0f5", color: "#1d1d1f", borderRadius: "14px 14px 14px 4px", padding: "9px 13px", fontSize: 13, lineHeight: 1.55, wordBreak: "break-word" }}>
+                <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>, strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong> }}>{content}</ReactMarkdown>
+                <span style={{ display: "inline-block", width: 2, height: 13, background: "#0066cc", marginLeft: 2, verticalAlign: "text-bottom", animation: "cursorBlink 0.8s step-end infinite" }} />
+                <style>{`@keyframes cursorBlink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
+            </div>
         </div>
     );
 }
@@ -609,7 +620,8 @@ export default function SessionPage() {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [inputText, setInputText]     = useState("");
     const [sending, setSending]         = useState(false);
-    const [lastUnlockMs, setLastUnlockMs] = useState(3500);
+    const [unlockDone, setUnlockDone]   = useState(false);
+    const [streamingContent, setStreamingContent] = useState("");
     const [checklistProcessing, setChecklistProcessing] = useState(false);
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState<string | null>(null);
@@ -657,18 +669,49 @@ export default function SessionPage() {
         }]);
 
         try {
-            const res = await api.sessions.sendMessage(sessionId, roleName, text);
-            setMessages((prev) => [...prev, {
-                id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
-                agent_name: res.agent_name, content: res.reply, created_at: new Date().toISOString(),
-            }]);
-            setRolesVisited(res.roles_visited);
-            setInfoSufficient(res.info_sufficient);
-            if (res.unlock_check_ms) setLastUnlockMs(res.unlock_check_ms);
+            const stream = await api.sessions.sendMessageStream(sessionId, roleName, text);
+            const reader = stream.getReader();
+            const decoder = new TextDecoder();
+            let buf = "";
+            let accumulated = "";
+            let doneEvent: Record<string, unknown> | null = null;
+
+            outer: while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split("\n");
+                buf = lines.pop() ?? "";
+                for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue;
+                    const raw = line.slice(6);
+                    if (raw === "[DONE]") break outer;
+                    const event = JSON.parse(raw) as Record<string, unknown>;
+                    if (event.type === "unlock_done") {
+                        setUnlockDone(true);
+                    } else if (event.type === "token") {
+                        accumulated += event.content as string;
+                        setStreamingContent(accumulated);
+                    } else if (event.type === "done") {
+                        doneEvent = event;
+                    }
+                }
+            }
+
+            if (doneEvent) {
+                const agentName = doneEvent.agent_name as string;
+                setMessages((prev) => [...prev, {
+                    id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
+                    agent_name: agentName, content: accumulated, created_at: new Date().toISOString(),
+                }]);
+                setRolesVisited(doneEvent.roles_visited as string[]);
+                setInfoSufficient(doneEvent.info_sufficient as boolean);
+            }
+
+            setStreamingContent("");
+            setUnlockDone(false);
             setChecklistProcessing(true);
 
-            // Evidence and checklist are processed in the background on the server.
-            // Poll after a short delay to pick up the results.
             setTimeout(async () => {
                 try {
                     const evidenceResult = await api.sessions.getEvidence(sessionId);
@@ -683,16 +726,19 @@ export default function SessionPage() {
                         }
                         return completed;
                     });
-                    const visibleEvidence = allEvidence.filter((e: {visible?: boolean}) => e.visible !== false);
-                    setInfoSufficient((prev) => prev || hasSufficientEvidence(res.roles_visited, visibleEvidence));
+                    const visitedRoles = (doneEvent?.roles_visited as string[]) ?? [];
+                    const visibleEvidence = allEvidence.filter((e: { visible?: boolean }) => e.visible !== false);
+                    setInfoSufficient((prev) => prev || hasSufficientEvidence(visitedRoles, visibleEvidence));
                 } catch {
-                    // Non-critical: evidence board will refresh on next interaction
+                    // Non-critical
                 } finally {
                     setChecklistProcessing(false);
                 }
             }, 4000);
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== tempId));
+            setStreamingContent("");
+            setUnlockDone(false);
             setError("Failed to send. Please try again.");
         } finally {
             setSending(false);
@@ -748,7 +794,8 @@ export default function SessionPage() {
                             messages={messages}
                             selectedRole={selectedRole}
                             sending={sending}
-                            thinkingMs={lastUnlockMs}
+                            unlockDone={unlockDone}
+                            streamingContent={streamingContent}
                             role={roles.find((r) => r.name === selectedRole)}
                             onSuggestedQuestion={(q) => setInputText(q)}
                         />
