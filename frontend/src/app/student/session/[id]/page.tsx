@@ -6,6 +6,7 @@ import { getCurrentUser, User } from "@/lib/auth";
 import {
     api, ApiCaseDetail, ApiPlaybookRole, ApiMessage, ApiEvidence, ApiChecklistItem,
 } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 
 const DEFAULT_ROLES: ApiPlaybookRole[] = [
@@ -323,7 +324,10 @@ function ChatBubble({ msg, roleName }: { msg: ApiMessage; roleName: string }) {
                 </div>
             )}
             <div style={{ maxWidth: "72%", background: isStudent ? "#0066cc" : "#f0f0f5", color: isStudent ? "#fff" : "#1d1d1f", borderRadius: isStudent ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "9px 13px", fontSize: 13, lineHeight: 1.55, wordBreak: "break-word" }}>
-                {msg.content}
+                <ReactMarkdown components={{
+                    p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
+                    strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+                }}>{msg.content}</ReactMarkdown>
             </div>
         </div>
     );

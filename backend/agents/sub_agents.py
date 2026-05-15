@@ -98,6 +98,8 @@ def _build_system_prompt(role: dict, allowed_info: list, raw_content: str = "") 
             + raw_content
         )
 
+    prompt += "\n\nIMPORTANT: Keep your replies concise — 3 to 4 sentences maximum."
+
     return prompt
 
 
