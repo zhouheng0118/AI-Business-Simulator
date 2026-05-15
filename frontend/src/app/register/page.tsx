@@ -6,6 +6,9 @@ import Link from "next/link";
 import RoleChip from "@/components/RoleChip";
 import AuthFooter from "@/components/AuthFooter";
 import ToggleEye from "@/components/ToggleEye";
+import Field from "@/components/forms/Field";
+import Label from "@/components/forms/Label";
+import ErrorText from "@/components/forms/ErrorText";
 import { registerUser } from "@/lib/auth";
 
 type Role = "professor" | "student";
@@ -218,54 +221,4 @@ export default function RegisterPage() {
     );
 }
 
-function Field({
-    label,
-    error,
-    children,
-}: {
-    label: string;
-    error?: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <div className="flex flex-col gap-[6px]">
-            <Label>{label}</Label>
-            {children}
-            {error && <ErrorText>{error}</ErrorText>}
-        </div>
-    );
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-    return (
-        <label
-            style={{
-                fontFamily: "SF Pro Text, system-ui, sans-serif",
-                fontSize: "14px",
-                fontWeight: 600,
-                lineHeight: "1.29",
-                letterSpacing: "-0.224px",
-                color: "#1d1d1f",
-            }}
-        >
-            {children}
-        </label>
-    );
-}
-
-function ErrorText({ children }: { children: React.ReactNode }) {
-    return (
-        <p
-            style={{
-                fontFamily: "SF Pro Text, system-ui, sans-serif",
-                fontSize: "12px",
-                fontWeight: 400,
-                letterSpacing: "-0.12px",
-                color: "#ff3b30",
-            }}
-        >
-            {children}
-        </p>
-    );
-}
 

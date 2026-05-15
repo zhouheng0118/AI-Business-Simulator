@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthFooter from "@/components/AuthFooter";
 import ToggleEye from "@/components/ToggleEye";
+import Field from "@/components/forms/Field";
 import { loginUser } from "@/lib/auth";
 
 interface FormState {
@@ -164,44 +165,4 @@ export default function LoginPage() {
     );
 }
 
-function Field({
-    label,
-    error,
-    children,
-}: {
-    label: string;
-    error?: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <div className="flex flex-col gap-[6px]">
-            <label
-                style={{
-                    fontFamily: "SF Pro Text, system-ui, sans-serif",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    lineHeight: "1.29",
-                    letterSpacing: "-0.224px",
-                    color: "#1d1d1f",
-                }}
-            >
-                {label}
-            </label>
-            {children}
-            {error && (
-                <p
-                    style={{
-                        fontFamily: "SF Pro Text, system-ui, sans-serif",
-                        fontSize: "12px",
-                        fontWeight: 400,
-                        letterSpacing: "-0.12px",
-                        color: "#ff3b30",
-                    }}
-                >
-                    {error}
-                </p>
-            )}
-        </div>
-    );
-}
 
