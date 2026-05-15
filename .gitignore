@@ -50,3 +50,6 @@ uploads/
 Design.md
 # Case files
 /cases/
+
+# TypeScript build cache
+*.tsbuildinfo
