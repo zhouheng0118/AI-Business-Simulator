@@ -16,7 +16,7 @@ from agents.role_types import (
     normalize_label,
     role_type_matches,
 )
-from agents.sub_agents import call_sub_agent
+from agents.sub_agents import call_sub_agent, stream_sub_agent
 from llm_client import FALLBACK_REPLY, complete
 
 _MIN_ROLES = 3
@@ -569,4 +569,83 @@ async def handle_message(
         "newly_checked_items": [],
         "checklist_completed": list(session.get("checklist_completed") or []),
         "unlock_check_ms": result.get("unlock_check_ms", 0),
+    }
+
+
+async def handle_message_stream(session_id: str, role_name: str, student_message: str):
+    """Yield SSE event dicts for a streaming session message.
+
+    Events in order:
+      {"type": "unlock_done", "unlock_check_ms": N}
+      {"type": "token", "content": "..."}   (repeated)
+      {"type": "done", "agent_name": ..., "roles_visited": ..., ...}
+    """
+    session = db.get_session(session_id)
+    if session is None:
+        yield {"type": "error", "message": "Session not found"}
+        return
+
+    playbook = db.get_playbook_by_case(session["case_id"])
+    if playbook is None:
+        yield {"type": "error", "message": "No approved playbook"}
+        return
+
+    history = db.get_messages(session_id)
+    case = db.get_case(session["case_id"])
+    roles: list = playbook.get("roles") or []
+    info_atoms: list = playbook.get("info_atoms") or []
+    raw_content: str = (case or {}).get("raw_content", "")
+
+    role = _find_role(roles, role_name)
+    if role is None:
+        yield {"type": "unlock_done", "unlock_check_ms": 0}
+        yield {"type": "token", "content": FALLBACK_REPLY}
+        current_roles = list(session.get("interviewed_roles") or [])
+        yield {
+            "type": "done",
+            "agent_name": role_name,
+            "roles_visited": current_roles,
+            "info_sufficient": False,
+            "newly_unlocked": False,
+            "checklist_completed": list(session.get("checklist_completed") or []),
+            "unlock_check_ms": 0,
+        }
+        return
+
+    # Phase 1: unlock condition check
+    t0 = time.monotonic()
+    allowed_info, had_unlock = await _compute_allowed_info(
+        role, info_atoms, session, history, student_message
+    )
+    unlock_check_ms = int((time.monotonic() - t0) * 1000)
+    yield {"type": "unlock_done", "unlock_check_ms": unlock_check_ms}
+
+    # Phase 2: stream reply tokens
+    agent_name = role["name"]
+    full_reply = ""
+    async for chunk in stream_sub_agent(
+        role, allowed_info, history, student_message, raw_content=raw_content
+    ):
+        full_reply += chunk
+        yield {"type": "token", "content": chunk}
+
+    # Persist and background-process after streaming completes
+    db.save_message(session_id, "student", student_message, agent_name)
+    db.save_message(session_id, "agent", full_reply, agent_name)
+    asyncio.create_task(_background_post_process(
+        session_id, session, playbook, full_reply, agent_name, had_unlock, student_message
+    ))
+
+    current_roles = list(session.get("interviewed_roles") or [])
+    if agent_name not in current_roles:
+        current_roles = current_roles + [agent_name]
+
+    yield {
+        "type": "done",
+        "agent_name": agent_name,
+        "roles_visited": current_roles,
+        "info_sufficient": _is_info_sufficient({**session, "interviewed_roles": current_roles}),
+        "newly_unlocked": had_unlock,
+        "checklist_completed": list(session.get("checklist_completed") or []),
+        "unlock_check_ms": unlock_check_ms,
     }

@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 from agents.role_types import infer_role_type
-from llm_client import chat
+from llm_client import chat, stream_chat
 
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
@@ -139,3 +139,33 @@ async def call_sub_agent(
         temperature=0.7,
     )
     return _strip_boundary_check(raw)
+
+
+_BOUNDARY_TAIL = 60  # buffer size to safely strip trailing <boundary_check> tag
+
+
+async def stream_sub_agent(
+    role: dict, allowed_info: list, history: list, student_message: str, raw_content: str = ""
+):
+
+    system_prompt = _build_system_prompt(role, allowed_info, raw_content)
+    filtered_history = [
+        msg for msg in history[-10:]
+        if _message_belongs_to_role_thread(msg, role["name"])
+    ]
+
+    buffer = ""
+    async for token in stream_chat(
+        system_prompt,
+        student_message,
+        history=filtered_history,
+        max_tokens=400,
+        temperature=0.7,
+    ):
+        buffer += token
+        if len(buffer) > _BOUNDARY_TAIL:
+            yield buffer[:-_BOUNDARY_TAIL]
+            buffer = buffer[-_BOUNDARY_TAIL:]
+
+    if buffer:
+        yield _strip_boundary_check(buffer)

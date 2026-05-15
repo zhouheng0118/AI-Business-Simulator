@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json as _json
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import database as db
-from agents.orchestrator import handle_message
+from agents.orchestrator import handle_message, handle_message_stream
 from agents.scorer import score_answer, get_default_question
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -63,6 +65,29 @@ async def send_message(session_id: str, body: SendMessageIn):
             detail=f"Session is '{session['status']}', not accepting messages",
         )
     return await handle_message(session_id, body.role_name, body.message)
+
+
+@router.post("/{session_id}/messages/stream")
+async def send_message_stream(session_id: str, body: SendMessageIn):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session["status"] != "in_progress":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session is '{session['status']}', not accepting messages",
+        )
+
+    async def event_generator():
+        async for event in handle_message_stream(session_id, body.role_name, body.message):
+            yield f"data: {_json.dumps(event)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{session_id}/messages")

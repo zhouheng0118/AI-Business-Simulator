@@ -10,7 +10,7 @@ import asyncio
 import os
 import re
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
 try:
@@ -53,6 +53,44 @@ def _strip_hidden_thoughts(text: str) -> str:
         text,
         flags=re.DOTALL | re.IGNORECASE,
     ).strip()
+
+
+_THOUGHT_OPEN = "<thought>"
+_THOUGHT_CLOSE = "</thought>"
+
+
+async def _filter_thought_tags(source: AsyncIterator[str]) -> AsyncIterator[str]:
+    suppressing = False
+    buf = ""
+
+    async for chunk in source:
+        buf += chunk
+        while True:
+            if suppressing:
+                idx = buf.lower().find(_THOUGHT_CLOSE.lower())
+                if idx >= 0:
+                    buf = buf[idx + len(_THOUGHT_CLOSE):]
+                    suppressing = False
+                else:
+                    if len(buf) > len(_THOUGHT_CLOSE):
+                        buf = buf[-len(_THOUGHT_CLOSE):]
+                    break
+            else:
+                idx = buf.lower().find(_THOUGHT_OPEN.lower())
+                if idx >= 0:
+                    if idx > 0:
+                        yield buf[:idx]
+                    buf = buf[idx + len(_THOUGHT_OPEN):]
+                    suppressing = True
+                else:
+                    safe = len(buf) - (len(_THOUGHT_OPEN) - 1)
+                    if safe > 0:
+                        yield buf[:safe]
+                        buf = buf[safe:]
+                    break
+
+    if not suppressing and buf:
+        yield buf
 
 
 def _to_openai_role(role: str) -> str:
@@ -168,3 +206,70 @@ async def complete(
         max_tokens=max_tokens,
         temperature=temperature,
     )
+
+
+async def stream_chat(
+    system_prompt: str,
+    user_message: str,
+    history: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    max_tokens: int = MAX_TOKENS,
+    temperature: float = TEMPERATURE,
+) -> AsyncIterator[str]:
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for item in history or []:
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        messages.append(
+            {
+                "role": _to_openai_role(str(item.get("role", "student"))),
+                "content": content,
+            }
+        )
+    messages.append({"role": "user", "content": user_message})
+
+    if not MODEL_API_KEY:
+        mock = _mock_reply(system_prompt, user_message)
+        for word in mock.split():
+            yield word + " "
+            await asyncio.sleep(0.04)
+        return
+
+    from openai import AsyncOpenAI, RateLimitError
+
+    client = AsyncOpenAI(base_url=MODEL_BASE_URL, api_key=MODEL_API_KEY)
+
+    for attempt in range(3):
+        try:
+            async with _LLM_SEMAPHORE:
+                stream = await client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stream=True,
+                )
+            async def _raw():
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+
+            async for token in _filter_thought_tags(_raw()):
+                yield token
+            return
+        except RateLimitError as exc:
+            match = re.search(r"retry in (\d+(?:\.\d+)?)", str(exc), re.IGNORECASE)
+            wait = float(match.group(1)) if match else 30.0
+            wait = min(wait + 2, 90)
+            logger.warning("Rate limit hit (attempt %d/3); waiting %.0fs", attempt + 1, wait)
+            if attempt < 2:
+                await asyncio.sleep(wait)
+            else:
+                yield FALLBACK_REPLY
+                return
+        except Exception as exc:
+            logger.exception("Streaming chat failed: %s", exc)
+            yield FALLBACK_REPLY
+            return
