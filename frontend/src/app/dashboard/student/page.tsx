@@ -16,10 +16,48 @@ import {
 
 type CaseStatus = "not_started" | "in_progress" | "completed";
 
+function briefCaseBlurb(text: string | null | undefined, maxSentences = 2, maxChars = 220): string {
+    const t = (text ?? "").trim().replace(/\s+/g, " ");
+    if (!t) return "";
+
+    const isSentenceEnd = (idx: number): boolean => {
+        const ch = t[idx];
+        if (!ch) return false;
+        if (".!?".includes(ch)) {
+            const after = t[idx + 1];
+            return after === undefined || /\s/.test(after) || after === '"' || after === "'";
+        }
+        if ("。！？".includes(ch)) return true;
+        return false;
+    };
+
+    const boundaries: number[] = [];
+    for (let i = 0; i < t.length; i++) {
+        if (isSentenceEnd(i)) boundaries.push(i + 1);
+    }
+
+    let out: string;
+    if (boundaries.length >= maxSentences) {
+        out = t.slice(0, boundaries[maxSentences - 1]).trim();
+    } else if (boundaries.length === 1) {
+        out = t.slice(0, boundaries[0]).trim();
+    } else {
+        out = t;
+    }
+
+    if (out.length > maxChars) {
+        let cut = out.slice(0, maxChars - 1);
+        const sp = cut.lastIndexOf(" ");
+        if (sp > Math.min(48, cut.length * 0.45)) cut = cut.slice(0, sp);
+        out = cut.trimEnd() + "…";
+    }
+    return out;
+}
+
 interface DisplayCase {
     id: string;
     title: string;
-    description: string;
+    descriptionPreview: string;
     difficulty: string;
     teaching_goals: string[];
     status: CaseStatus;
@@ -49,7 +87,7 @@ function buildDisplayCases(
         return {
             id: c.id,
             title: c.title,
-            description: c.description ?? "",
+            descriptionPreview: briefCaseBlurb(c.description),
             difficulty: difficultyLabel(c.difficulty),
             teaching_goals: c.teaching_goals,
             status,
@@ -184,13 +222,26 @@ function CaseCard({ data }: { data: DisplayCase }) {
                 <Badge label={data.difficulty} bg="#f5f5f7" color={diffColor[data.difficulty] ?? "#7a7a7a"} />
             </div>
 
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#1d1d1f", marginBottom: 6, lineHeight: 1.35, letterSpacing: "-0.1px" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#1d1d1f", marginBottom: data.descriptionPreview ? 6 : 12, lineHeight: 1.35, letterSpacing: "-0.1px" }}>
                 {data.title}
             </div>
 
-            <div style={{ fontSize: 12, color: "#7a7a7a", lineHeight: 1.5, marginBottom: 12 }}>
-                {data.description || "No description provided."}
-            </div>
+            {data.descriptionPreview ? (
+                <div
+                    style={{
+                        fontSize: 12,
+                        color: "#7a7a7a",
+                        lineHeight: 1.45,
+                        marginBottom: 12,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: "vertical" as const,
+                        overflow: "hidden",
+                    }}
+                >
+                    {data.descriptionPreview}
+                </div>
+            ) : null}
 
             <div style={{ height: 4, background: "#f0f0f0", borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
                 <div style={{ height: "100%", borderRadius: 2, width: `${data.progress}%`, background: barColor[data.status], transition: "width 0.3s" }} />
