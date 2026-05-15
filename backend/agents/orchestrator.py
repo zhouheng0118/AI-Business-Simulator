@@ -56,6 +56,24 @@ Has the unlock condition been met? Reply with only YES or NO."""
 
 # Step 2: Build allowed_info for this turn
 
+def _level_gate_passed(atom: dict, session: dict) -> bool:
+    """Whether the difficulty-level prerequisite for unlocking this atom is met.
+
+    L1: no prerequisite (ask the right topic).
+    L2: student must have interviewed at least one prior role.
+    L3: student must have interviewed at least two prior roles (cross-reference).
+    """
+    level = atom.get("level", 1)
+    interviewed = session.get("interviewed_roles") or []
+    if level <= 1:
+        return True
+    if level == 2:
+        return len(interviewed) >= 1
+    if level == 3:
+        return len(interviewed) >= 2
+    return True
+
+
 async def _compute_allowed_info(
     role: dict,
     info_atoms: list,
@@ -86,7 +104,11 @@ async def _compute_allowed_info(
         for a in info_atoms
         if _info_atom_owned_by_role(a, role) and a.get("access") == "locked"
     ]
-    pending = [(a, a.get("unlock_condition", "")) for a in locked_atoms if a.get("unlock_condition")]
+    pending = [
+        (a, a.get("unlock_condition", ""))
+        for a in locked_atoms
+        if a.get("unlock_condition") and _level_gate_passed(a, session)
+    ]
     if not pending:
         return allowed, False
 
