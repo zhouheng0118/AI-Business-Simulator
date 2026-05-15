@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections import defaultdict
 import database as db
+
+# Per-session write lock: prevents concurrent background tasks from
+# overwriting each other's evidence/checklist DB updates.
+_SESSION_WRITE_LOCKS: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 from agents.role_types import (
     canonical_role_type,
     infer_role_type,
@@ -458,18 +463,28 @@ async def _background_post_process(
     had_unlock: bool,
     student_message: str,
 ) -> None:
-    """Extract evidence and evaluate checklist after the reply is already returned."""
+    """Extract evidence and evaluate checklist after the reply is already returned.
+
+    LLM calls run concurrently across sessions. The DB read-modify-write is
+    serialized per session via _SESSION_WRITE_LOCKS to prevent concurrent
+    background tasks from overwriting each other's evidence updates.
+    """
+    # LLM calls outside the lock — concurrent tasks can run these in parallel
     evidence_items = await _extract_evidence(reply, agent_name, visible=had_unlock)
     new_evidence = _coerce_evidence_list(evidence_items)
-    db.update_evidence_and_roles(session_id, new_evidence, agent_name)
 
     checklist_items: list = playbook.get("checklist_items") or []
     already_completed: list = list(session.get("checklist_completed") or [])
+    new_completed = already_completed
     if checklist_items:
         updated_history = db.get_messages(session_id)
         new_completed = await _check_checklist_items(
             checklist_items, already_completed, session, updated_history, student_message
         )
+
+    # DB writes inside the lock — serialized per session
+    async with _SESSION_WRITE_LOCKS[session_id]:
+        db.update_evidence_and_roles(session_id, new_evidence, agent_name)
         newly_checked = [i for i in new_completed if i not in set(already_completed)]
         if newly_checked:
             db.update_checklist_completed(session_id, new_completed)
@@ -510,24 +525,25 @@ async def handle_message(
     db.save_message(session_id, "student", student_message, agent_name)
     db.save_message(session_id, "agent", reply, agent_name)
 
-    # Register this role visit synchronously so roles_visited is accurate
-    if result.get("role_found", True):
-        db.update_evidence_and_roles(session_id, [], agent_name)
-
-    # Evidence extraction + checklist run in background after reply is returned
+    # Evidence extraction + checklist + DB writes all happen in the background.
+    # Role registration is also done there (inside the per-session write lock).
     asyncio.create_task(_background_post_process(
         session_id, session, playbook, reply, agent_name,
         result.get("newly_unlocked", False), student_message,
     ))
 
-    updated_session = db.get_session(session_id)
+    # Compute roles_visited locally so the response is accurate without a DB round-trip
+    current_roles = list(session.get("interviewed_roles") or [])
+    if result.get("role_found", True) and agent_name not in current_roles:
+        current_roles = current_roles + [agent_name]
+
     return {
         "reply": reply,
         "new_evidence": [],
         "agent_name": agent_name,
-        "info_sufficient": _is_info_sufficient(updated_session),
-        "roles_visited": updated_session.get("interviewed_roles") or [],
+        "info_sufficient": _is_info_sufficient({**session, "interviewed_roles": current_roles}),
+        "roles_visited": current_roles,
         "newly_unlocked": result.get("newly_unlocked", False),
         "newly_checked_items": [],
-        "checklist_completed": list(updated_session.get("checklist_completed") or []),
+        "checklist_completed": list(session.get("checklist_completed") or []),
     }

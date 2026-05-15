@@ -265,6 +265,17 @@ def _append_unique_evidence(board: list, new_evidence: list) -> list:
     return result
 
 
+def add_interviewed_role(session_id: str, role_name: str) -> None:
+    """Append role_name to interviewed_roles without touching evidence_board."""
+    session = get_session(session_id)
+    roles: list = list(session.get("interviewed_roles") or [])
+    if role_name not in roles:
+        roles.append(role_name)
+        _get_client().table("sessions").update(
+            {"interviewed_roles": roles}
+        ).eq("id", session_id).execute()
+
+
 def update_evidence_and_roles(
     session_id: str, new_evidence: list, role_name: str
 ) -> None:
