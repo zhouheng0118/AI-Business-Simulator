@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import database as db
@@ -80,18 +81,21 @@ async def _compute_allowed_info(
     else:
         allowed = list(role.get("allowed_info", []))
 
-    had_unlock = False
-
     locked_atoms = [
         a
         for a in info_atoms
         if _info_atom_owned_by_role(a, role) and a.get("access") == "locked"
     ]
-    for atom in locked_atoms:
-        condition = atom.get("unlock_condition", "")
-        if condition and await _is_unlock_condition_met(
-            condition, session, history, current_message
-        ):
+    pending = [(a, a.get("unlock_condition", "")) for a in locked_atoms if a.get("unlock_condition")]
+    if not pending:
+        return allowed, False
+
+    results = await asyncio.gather(
+        *[_is_unlock_condition_met(cond, session, history, current_message) for _, cond in pending]
+    )
+    had_unlock = False
+    for (atom, _), is_met in zip(pending, results):
+        if is_met:
             allowed.append(atom["fact"])
             had_unlock = True
 
@@ -277,11 +281,19 @@ async def _check_checklist_items(
     completed = list(already_completed)
     completed_set = set(completed)
 
-    for idx, item in enumerate(checklist_items):
-        if idx in completed_set:
-            continue
-        condition = item.get("completion_condition", "")
-        if condition and await _is_unlock_condition_met(condition, session, history, current_message):
+    pending = [
+        (idx, item.get("completion_condition", ""))
+        for idx, item in enumerate(checklist_items)
+        if idx not in completed_set and item.get("completion_condition")
+    ]
+    if not pending:
+        return completed
+
+    results = await asyncio.gather(
+        *[_is_unlock_condition_met(cond, session, history, current_message) for _, cond in pending]
+    )
+    for (idx, _), is_met in zip(pending, results):
+        if is_met:
             completed.append(idx)
 
     return completed
