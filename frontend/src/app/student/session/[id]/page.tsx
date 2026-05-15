@@ -631,21 +631,35 @@ export default function SessionPage() {
 
         try {
             const res = await api.sessions.sendMessage(sessionId, roleName, text);
-            const evidenceResult = await api.sessions.getEvidence(sessionId);
             setMessages((prev) => [...prev, {
                 id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
                 agent_name: res.agent_name, content: res.reply, created_at: new Date().toISOString(),
             }]);
-            const allEvidence = evidenceResult.evidence_board;
-            setEvidence(allEvidence);
-            setChecklistCompleted(res.checklist_completed ?? evidenceResult.checklist_completed ?? []);
-            if ((res.newly_checked_items ?? []).length > 0) {
-                setNewlyCheckedItems(new Set(res.newly_checked_items));
-                setTimeout(() => setNewlyCheckedItems(new Set()), 3000);
-            }
             setRolesVisited(res.roles_visited);
-            const visibleEvidence = allEvidence.filter((e) => e.visible !== false);
-            setInfoSufficient(res.info_sufficient || hasSufficientEvidence(res.roles_visited, visibleEvidence));
+            setInfoSufficient(res.info_sufficient);
+
+            // Evidence and checklist are processed in the background on the server.
+            // Poll after a short delay to pick up the results.
+            setTimeout(async () => {
+                try {
+                    const evidenceResult = await api.sessions.getEvidence(sessionId);
+                    const allEvidence = evidenceResult.evidence_board;
+                    setEvidence(allEvidence);
+                    const completed = evidenceResult.checklist_completed ?? [];
+                    setChecklistCompleted((prev) => {
+                        const newItems = completed.filter((i: number) => !prev.includes(i));
+                        if (newItems.length > 0) {
+                            setNewlyCheckedItems(new Set(newItems));
+                            setTimeout(() => setNewlyCheckedItems(new Set()), 3000);
+                        }
+                        return completed;
+                    });
+                    const visibleEvidence = allEvidence.filter((e: {visible?: boolean}) => e.visible !== false);
+                    setInfoSufficient((prev) => prev || hasSufficientEvidence(res.roles_visited, visibleEvidence));
+                } catch {
+                    // Non-critical: evidence board will refresh on next interaction
+                }
+            }, 4000);
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== tempId));
             setError("Failed to send. Please try again.");

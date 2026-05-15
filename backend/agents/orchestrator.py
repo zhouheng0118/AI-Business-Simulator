@@ -394,6 +394,7 @@ async def handle_student_message(
     user_message: str,
     history: list[dict],
     case_context: dict,
+    extract_evidence: bool = True,
 ) -> dict:
     """Handle one student message using only Agent-layer inputs.
 
@@ -431,7 +432,10 @@ async def handle_student_message(
         role, info_atoms, session, history, user_message
     )
     reply = await call_sub_agent(role, allowed_info, history, user_message, raw_content=raw_content)
-    evidence_items = await _extract_evidence(reply, role["name"], visible=had_unlock)
+
+    evidence_items: list = []
+    if extract_evidence:
+        evidence_items = await _extract_evidence(reply, role["name"], visible=had_unlock)
 
     return {
         "reply": reply,
@@ -445,11 +449,36 @@ async def handle_student_message(
 
 # FastAPI adapter entry point
 
+async def _background_post_process(
+    session_id: str,
+    session: dict,
+    playbook: dict,
+    reply: str,
+    agent_name: str,
+    had_unlock: bool,
+    student_message: str,
+) -> None:
+    """Extract evidence and evaluate checklist after the reply is already returned."""
+    evidence_items = await _extract_evidence(reply, agent_name, visible=had_unlock)
+    new_evidence = _coerce_evidence_list(evidence_items)
+    db.update_evidence_and_roles(session_id, new_evidence, agent_name)
+
+    checklist_items: list = playbook.get("checklist_items") or []
+    already_completed: list = list(session.get("checklist_completed") or [])
+    if checklist_items:
+        updated_history = db.get_messages(session_id)
+        new_completed = await _check_checklist_items(
+            checklist_items, already_completed, session, updated_history, student_message
+        )
+        newly_checked = [i for i in new_completed if i not in set(already_completed)]
+        if newly_checked:
+            db.update_checklist_completed(session_id, new_completed)
+
+
 async def handle_message(
     session_id: str, role_name: str, student_message: str
 ) -> dict:
     """Handle a FastAPI session message and persist the Agent result."""
-    # Load state from Supabase (no in-memory session state)
     session = db.get_session(session_id)
     if session is None:
         raise ValueError(f"Unknown session: {session_id!r}")
@@ -459,8 +488,9 @@ async def handle_message(
         raise ValueError(f"No approved playbook for case: {session['case_id']!r}")
 
     history = db.get_messages(session_id)
-
     case = db.get_case(session["case_id"])
+
+    # Critical path: unlock checks + agent reply only (no evidence extraction)
     result = await handle_student_message(
         target_role=role_name,
         user_message=student_message,
@@ -471,41 +501,33 @@ async def handle_message(
             "session": session,
             "raw_content": (case or {}).get("raw_content", ""),
         },
+        extract_evidence=False,
     )
     reply = result["reply"]
-
-    # 3 Extract evidence and persist
-    new_evidence = _coerce_evidence_list(result.get("evidence"))
     agent_name = result["agent_name"]
+
+    # Persist messages immediately so history stays consistent
     db.save_message(session_id, "student", student_message, agent_name)
     db.save_message(session_id, "agent", reply, agent_name)
+
+    # Register this role visit synchronously so roles_visited is accurate
     if result.get("role_found", True):
-        db.update_evidence_and_roles(session_id, new_evidence, agent_name)
+        db.update_evidence_and_roles(session_id, [], agent_name)
 
-    # 4 Evaluate checklist progress
-    checklist_items: list = playbook.get("checklist_items") or []
-    already_completed: list = list(session.get("checklist_completed") or [])
-    newly_checked: list[int] = []
-    if checklist_items:
-        updated_history = db.get_messages(session_id)
-        new_completed = await _check_checklist_items(
-            checklist_items, already_completed, session, updated_history, student_message
-        )
-        newly_checked = [i for i in new_completed if i not in set(already_completed)]
-        if newly_checked:
-            db.update_checklist_completed(session_id, new_completed)
+    # Evidence extraction + checklist run in background after reply is returned
+    asyncio.create_task(_background_post_process(
+        session_id, session, playbook, reply, agent_name,
+        result.get("newly_unlocked", False), student_message,
+    ))
 
-    # 5 Check if student has gathered enough to proceed to answering
     updated_session = db.get_session(session_id)
-    info_sufficient = _is_info_sufficient(updated_session)
-
     return {
         "reply": reply,
-        "new_evidence": new_evidence,
+        "new_evidence": [],
         "agent_name": agent_name,
-        "info_sufficient": info_sufficient,
+        "info_sufficient": _is_info_sufficient(updated_session),
         "roles_visited": updated_session.get("interviewed_roles") or [],
         "newly_unlocked": result.get("newly_unlocked", False),
-        "newly_checked_items": newly_checked,
-        "checklist_completed": list(updated_session.get("checklist_completed") or already_completed + newly_checked),
+        "newly_checked_items": [],
+        "checklist_completed": list(updated_session.get("checklist_completed") or []),
     }
