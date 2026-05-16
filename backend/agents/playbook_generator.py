@@ -7,6 +7,11 @@ import json
 import re
 from llm_client import complete
 from text_utils import STOPWORDS as _ATOM_STOPWORDS, word_overlap_ratio
+from agents.prompts import background as _p_background
+from agents.prompts import checklist as _p_checklist
+from agents.prompts import info_atoms as _p_info_atoms
+from agents.prompts import opening_fields as _p_opening_fields
+from agents.prompts import playbook as _p_playbook
 
 _BASIC_CATEGORIES = {
     "company_background",
@@ -152,79 +157,14 @@ Each atom must carry the objective_index of the goal it primarily serves."""
 
     max_tokens = 2000 + 1500 * max(0, len(goals) - 1)
 
-    prompt = f"""You are analyzing a business case to map its information into two layers for a student simulation.
-
-Case Title: {title}
-{goals_instruction}
-
-Case Content:
-{content_excerpt}
-
-Each stakeholder's already-public basic facts:
-{roles_context}
-
-STEP 1 — RELEVANCE FILTER
-Only include facts that affect the student's ability to achieve the teaching goals above.
-Discard facts irrelevant to all goals (e.g. company history unrelated to the decision, office locations, founder bios).
-
-STEP 2 — CLASSIFY EACH FACT
-Classify each retained fact using these rules:
-
-BASIC LAYER ("allowed") — use if ANY of these is true:
-1. Publicly available or known to all parties
-2. Students need it to know which questions to ask
-3. Describes the core decision context or a stakeholder's official responsibilities
-4. Describes a visible tension without revealing its root cause
-
-HIDDEN LAYER ("locked") — use only if ALL of these are true:
-1. Revealing it would materially change the student's analysis
-2. The stakeholder has a realistic motive to withhold it
-3. It can only be surfaced by a student thinking in the right direction
-
-STEP 2b — ASSIGN CATEGORY (allowed atoms only)
-- company_background: founding story, market size, competitive landscape, who the company is
-- decision_context: the specific decision being made, its timeline, constraints, and stakeholder pressures
-- role_statement: this stakeholder's official responsibility and mandate in this case
-- visible_tension: a publicly acknowledged conflict, risk, or tradeoff without its root cause
-- public_numbers: revenue, market size, pricing, headcount, or other public quantitative data
-
-STEP 3 — ASSIGN UNLOCK DIFFICULTY (locked atoms only)
-- level 1: Student only needs to ask about the right topic (no prerequisites)
-- level 2: Student must question a basic-layer assumption OR get a clue from another agent first
-- level 3: Student must cross-reference info from TWO OR MORE agents to even know to ask this
-
-Return ONLY valid JSON array, no markdown:
-[
-  {{
-    "fact": "<one concrete fact, include numbers where relevant>",
-    "owner_roles": ["<role name>"],
-    "access": "allowed",
-    "unlock_condition": "",
-    "level": 0,
-    "category": "decision_context",
-    "objective_index": 0
-  }},
-  {{
-    "fact": "<hidden fact that materially changes the analysis>",
-    "owner_roles": ["<role name>"],
-    "access": "locked",
-    "unlock_condition": "<specific trigger: what the student must ask or demonstrate>",
-    "level": 2,
-    "category": "",
-    "objective_index": 1
-  }}
-]
-
-Requirements:
-{per_goal_counts}
-{per_locked_counts}
-- Locked facts must be substantive: undisclosed financial risk, competitive threat, regulatory constraint, internal conflict
-- unlock_conditions must be specific ("Student asks why the growth projection assumes 30% and what supports it" not "Student asks about growth")
-- level must be 0 for allowed, 1/2/3 for locked
-- Each atom belongs to 1-2 roles maximum
-- objective_index must match one of the goal indices above
-- category must be one of the five allowed categories for allowed atoms; empty string for locked atoms
-- Each "fact" must be ≤ 25 words; each "unlock_condition" must be ≤ 25 words"""
+    prompt = _p_info_atoms.build(
+        title=title,
+        goals_instruction=goals_instruction,
+        content_excerpt=content_excerpt,
+        roles_context=roles_context,
+        per_goal_counts=per_goal_counts,
+        per_locked_counts=per_locked_counts,
+    )
 
     raw = await complete(prompt, max_tokens=max_tokens, temperature=0.2)
     atoms = _parse_info_atoms_multi(raw, num_objectives=max(1, len(goals)))
@@ -343,23 +283,7 @@ async def synthesize_background(info_atoms: list) -> str:
 
     facts_text = "\n\n".join(sections)
 
-    prompt = f"""You are writing a case briefing for business school students.
-
-Below are the publicly known facts about this business case, grouped by category:
-
-{facts_text}
-
-Write a single, cohesive paragraph (150–200 words) that presents these facts as a unified case brief.
-Requirements:
-- Write in clear, professional prose — no bullet points, no headers, no lists
-- Weave all the facts naturally into the narrative
-- Begin with who the company is and what decision they face
-- Include the key numbers and visible tensions
-- Mention each stakeholder's role briefly where relevant
-- End with a sentence that frames why this decision is consequential
-- Write as if briefing a student who has not read the case
-
-Return only the paragraph text, nothing else."""
+    prompt = _p_background.build(facts_text=facts_text)
 
     result = await complete(prompt, max_tokens=400, temperature=0.3)
     return result.strip()
@@ -381,38 +305,11 @@ async def _generate_checklist_items(
     goals_text = "\n".join(f"{i+1}. {g}" for i, g in enumerate(teaching_goals))
     content_excerpt = raw_content.strip()[:3000]
 
-    prompt = f"""You are designing an investigation checklist for business school students.
-
-Case Title: {title}
-
-Teaching Goals (what students must learn):
-{goals_text}
-
-Case Content (excerpt):
-{content_excerpt}
-
-For EACH teaching goal, generate 3-5 specific investigation tasks that a student must complete through stakeholder interviews to achieve that goal.
-
-Each task must be:
-- Concrete and actionable (what to ask / discover)
-- Verifiable through conversation (you can tell when it's done)
-- Tied to at least one specific stakeholder in this case
-
-Return ONLY valid JSON, no markdown:
-[
-  {{
-    "objective_index": 0,
-    "task": "<topic label noun phrase, e.g. 'Cash runway timeline' or 'Revenue growth assumptions'>",
-    "completion_condition": "<specific: what the student must ask or demonstrate in conversation for this to count as done>"
-  }}
-]
-
-Requirements:
-- objective_index is 0-based (0 = first goal, 1 = second goal, etc.)
-- task is ≤8 words, noun phrase (topic label), specific to this case — do NOT use "Ask [role] about" framing
-- completion_condition is one sentence, concrete, evaluatable by reading conversation history
-- Generate 3-5 items per teaching goal — no more, no less
-- Cover different stakeholders across the items for each goal"""
+    prompt = _p_checklist.build(
+        title=title,
+        goals_text=goals_text,
+        content_excerpt=content_excerpt,
+    )
 
     raw = await complete(prompt, max_tokens=1500, temperature=0.2)
     return _parse_checklist_items(raw, len(teaching_goals))
@@ -464,34 +361,12 @@ async def _generate_opening_fields(raw_content: str, title: str = "") -> list[di
         for name, _, _ in _FIXED_ROLES
     )
 
-    prompt = f"""You are generating opening card content for a business school simulation.
-
-Case Title: {title}
-
-Case Content:
-{content_excerpt}
-
-Generate opening card content for each of these stakeholder roles:
-{roles_list}
-
-Per-role guidance:
-{guidance}
-
-Return ONLY valid JSON array, no markdown:
-[
-  {{
-    "name": "<exact role name>",
-    "opening_role_description": "<one sentence, specific to THIS case>",
-    "opening_topics": ["<case-specific topic 1>", "<topic 2>", "<topic 3>", "<topic 4>"],
-    "opening_suggested_question": "<one concrete question a student can ask to learn something important>"
-  }}
-]
-
-Requirements:
-- Exactly 5 items, one per role
-- opening_role_description: one sentence describing this stakeholder's role in THIS case specifically
-- opening_topics: 4-6 topics drawn from THIS case's facts, not generic role descriptions
-- opening_suggested_question: one concrete, case-specific starting question"""
+    prompt = _p_opening_fields.build(
+        title=title,
+        content_excerpt=content_excerpt,
+        roles_list=roles_list,
+        guidance=guidance,
+    )
 
     raw = await complete(prompt, max_tokens=1500, temperature=0.2)
     return _parse_opening_fields(raw)
@@ -571,70 +446,15 @@ async def generate_playbook(
         indent=2,
     )
 
-    prompt = f"""You are generating a structured AI simulation playbook for a business school case study.
-
-Case Title: {title}
-Case Type: {case_type}
-Teaching Goals: {goals_text}
-
-Case Content:
-{content_excerpt}
-
-Generate a background summary, exactly 5 stakeholder roles, and 2-3 discussion questions.
-
-Each role's domain focus:
-{role_guidance}
-
-Each role's opening card guidance:
-{opening_guidance}
-
-Return ONLY valid JSON, no markdown:
-{{
-  "background_summary": "<150-200 word student-facing case background: company context, the central decision or challenge, and why it matters now — use only publicly available facts, no hidden information>",
-  "roles": {roles_schema},
-  "info_atoms": [
-    {{
-      "fact": "<specific factual atom from this case>",
-      "owner_roles": ["<one role name from the roles list>"],
-      "access": "allowed",
-      "unlock_condition": ""
-    }},
-    {{
-      "fact": "<specific hidden/deeper factual atom from this case>",
-      "owner_roles": ["<one role name from the roles list>"],
-      "access": "locked",
-      "unlock_condition": "<what the student must ask to unlock this fact>"
-    }}
-  ],
-  "questions": [
-    {{
-      "id": "q1",
-      "type": "{case_type}",
-      "text": "<a specific, challenging question directly tied to this case's core decision or tension>",
-      "rubric_dimensions": [
-        {{"name": "Evidence Use", "weight": 25}},
-        {{"name": "Analytical Depth", "weight": 25}},
-        {{"name": "Recommendation Quality", "weight": 25}},
-        {{"name": "Risk Awareness", "weight": 25}}
-      ]
-    }}
-  ]
-}}
-
-Requirements:
-- background_summary: 150-200 words, written for a student who has not read the case. No hidden or locked information.
-- Use exactly these 5 role names and role_type values from the schema
-- Each role's allowed_info: 4-5 specific, concrete facts grounded in THIS case (names, numbers, constraints)
-- Each role's locked_info: 1-3 deeper facts, risks, tradeoffs, or implications from the case
-- Each role must have a concrete unlock_conditions sentence
-- Each role's opening_role_description: one sentence, case-specific, describing this stakeholder's role in THIS case's context
-- Each role's opening_topics: 4-6 specific topics drawn from THIS case's facts, not generic role descriptions
-- Each role's opening_suggested_question: one concrete, case-specific question the student can start with
-- info_atoms must include both allowed and locked facts and must use owner_roles that match the role names or role_type values
-- Facts must be grounded in THIS case (names, numbers, constraints mentioned in the content)
-- The CEO and CFO may share some overlapping strategic/financial facts
-- Generate 2-3 final questions when possible: one decision question, one analysis question, and optionally one reflection question
-- Questions must be specific to this case's central dilemma — not generic"""
+    prompt = _p_playbook.build(
+        title=title,
+        case_type=case_type,
+        goals_text=goals_text,
+        content_excerpt=content_excerpt,
+        role_guidance=role_guidance,
+        opening_guidance=opening_guidance,
+        roles_schema=roles_schema,
+    )
 
     raw = await complete(prompt, max_tokens=3500)
     playbook = _parse_playbook(raw)
