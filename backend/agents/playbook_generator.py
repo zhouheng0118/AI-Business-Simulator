@@ -71,6 +71,18 @@ def _atom_terms(fact: str) -> set[str]:
     return {w for w in words if w not in _ATOM_STOPWORDS}
 
 
+def _parse_json(raw: str):
+    """Strip markdown fences and decode JSON; return parsed value or None on failure."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
 def _deduplicate_atoms(atoms: list) -> list:
     """Remove near-duplicate facts across objectives, keeping the first occurrence.
 
@@ -232,16 +244,7 @@ def _parse_info_atoms_multi(raw: str, num_objectives: int = 1) -> list:
 
     Falls back to 0 for any atom missing or with an out-of-range objective_index.
     """
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        items = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-
+    items = _parse_json(raw)
     if not isinstance(items, list):
         return []
 
@@ -300,70 +303,6 @@ def _parse_info_atoms_multi(raw: str, num_objectives: int = 1) -> list:
 
     return result
 
-
-def _parse_info_atoms(raw: str, objective_index: int = 0) -> list:
-    """Parse and validate info atoms from LLM output, tagging each with objective_index."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        items = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-
-    if not isinstance(items, list):
-        return []
-
-    result = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        fact = str(item.get("fact") or "").strip()
-        if not fact or len(fact.split()) < 4:
-            continue
-        fact_words = fact.split()
-        if len(fact_words) > 25:
-            fact = " ".join(fact_words[:25])
-        access = item.get("access", "allowed")
-        if access not in ("allowed", "locked"):
-            access = "allowed"
-        owner_roles = [str(r) for r in (item.get("owner_roles") or []) if r]
-        unlock_condition = str(item.get("unlock_condition") or "").strip()
-        uc_words = unlock_condition.split()
-        if len(uc_words) > 25:
-            unlock_condition = " ".join(uc_words[:25])
-
-        # level: 0=allowed; 1=ask right topic; 2=question assumption; 3=cross-reference agents
-        # Clamp unknown locked values to 1.
-        raw_level = item.get("level")
-        if access == "allowed":
-            level = 0
-        elif raw_level in (1, 2, 3):
-            level = int(raw_level)
-        else:
-            level = 1
-
-        raw_category = str(item.get("category") or "").strip()
-        if access == "locked":
-            category = ""
-        elif raw_category in _BASIC_CATEGORIES:
-            category = raw_category
-        else:
-            category = ""
-
-        result.append({
-            "fact": fact,
-            "owner_roles": owner_roles,
-            "access": access,
-            "unlock_condition": unlock_condition,
-            "level": level,
-            "category": category,
-            "objective_index": objective_index,
-        })
-
-    return result
 
 
 async def synthesize_background(info_atoms: list) -> str:
@@ -489,16 +428,7 @@ Requirements:
 
 def _parse_checklist_items(raw: str, num_objectives: int) -> list:
     """Parse and validate checklist items from LLM output."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        items = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-
+    items = _parse_json(raw)
     if not isinstance(items, list):
         return []
 
@@ -576,16 +506,7 @@ Requirements:
 
 
 def _parse_opening_fields(raw: str) -> list[dict]:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        items = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-
+    items = _parse_json(raw)
     if not isinstance(items, list):
         return []
 
@@ -759,16 +680,7 @@ Requirements:
 
 
 def _parse_playbook(raw: str) -> dict:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return _fallback_playbook()
-
+    data = _parse_json(raw)
     if not isinstance(data, dict):
         return _fallback_playbook()
 
