@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 from llm_client import complete
+from text_utils import STOPWORDS as _ATOM_STOPWORDS, word_overlap_ratio
 
 _BASIC_CATEGORIES = {
     "company_background",
@@ -58,13 +59,6 @@ _OPENING_QUESTION_GUIDANCE = {
 }
 
 
-_ATOM_STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
-    "have", "in", "is", "it", "of", "on", "or", "the", "this", "to", "with",
-    "that", "was", "were", "its", "their", "they", "will", "would", "could",
-    "should", "not", "but", "our", "we", "which",
-}
-
 
 def _atom_terms(fact: str) -> set[str]:
     words = re.findall(r"[a-z][a-z0-9%-]{1,}", fact.lower())
@@ -109,9 +103,7 @@ def _deduplicate_atoms(atoms: list) -> list:
                 existing_terms = _atom_terms(existing.get("fact", ""))
                 if not terms or not existing_terms:
                     continue
-                overlap = terms & existing_terms
-                smaller = min(len(terms), len(existing_terms))
-                if smaller > 0 and len(overlap) / smaller >= 0.55:
+                if word_overlap_ratio(terms, existing_terms) >= 0.55:
                     is_dup = True
                     break
             if not is_dup:

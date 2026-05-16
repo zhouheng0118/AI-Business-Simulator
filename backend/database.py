@@ -5,35 +5,9 @@ from typing import Any
 import re
 
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from text_utils import STOPWORDS as _STOPWORDS, word_overlap_ratio
 
 _client: Any | None = None
-_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "has",
-    "have",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "our",
-    "per",
-    "that",
-    "the",
-    "this",
-    "to",
-    "with",
-}
 _HIGH_SIGNAL_TERMS = {
     "arpu",
     "attrition",
@@ -233,8 +207,7 @@ def _is_semantic_duplicate(existing: dict, candidate: dict) -> bool:
     ):
         return True
 
-    smaller_size = min(len(existing_terms), len(candidate_terms))
-    return len(overlap) / smaller_size >= 0.55
+    return word_overlap_ratio(existing_terms, candidate_terms) >= 0.55
 
 
 def _evidence_concepts(terms: set[str]) -> set[str]:
