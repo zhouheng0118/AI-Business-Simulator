@@ -392,16 +392,6 @@ def save_submissions(session_id: str, answers: list[dict]) -> None:
         ).execute()
 
 
-def get_submissions(session_id: str) -> list:
-    return (
-        _get_client().table("submissions")
-        .select("*")
-        .eq("session_id", session_id)
-        .execute()
-        .data
-    )
-
-
 def save_report(
     session_id: str,
     scores: list,
