@@ -264,7 +264,7 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
             </div>
             {/* 可问话题 chips */}
             {topics.length > 0 && (
-                <div style={{ padding: "0 32px 0 28px", marginTop: 18 }}>
+                <div style={{ padding: "0 32px 28px 28px", marginTop: 18 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: c.accent, marginBottom: 10, letterSpacing: "-0.1px" }}>You can ask about</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                         {topics.map((topic, i) => (
