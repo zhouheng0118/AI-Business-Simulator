@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser, User } from "@/lib/auth";
 import {
-    api, ApiCaseDetail, ApiPlaybookRole, ApiMessage, ApiEvidence, ApiChecklistItem,
+    api, ApiCaseDetail, ApiPlaybookRole, ApiMessage, ApiChecklistItem,
     MissionState, DEFAULT_MISSION_STATE,
 } from "@/lib/api";
 
@@ -35,11 +35,6 @@ function rc(name: string) {
 function roleRequestValue(role: ApiPlaybookRole | undefined): string {
     return role?.role_type || role?.name || "";
 }
-
-function hasSufficientEvidence(rolesVisited: string[], evidence: ApiEvidence[]): boolean {
-    return rolesVisited.length >= 3 && evidence.length >= 3;
-}
-
 
 function TopBar({ caseName, rolesVisited, total, missionPhase, sessionStatus, onProceed, onBack }: {
     caseName: string;
@@ -223,7 +218,6 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
     hideStartActions?: boolean;
     isCeo?: boolean;
 }) {
-    const [hoveredQ, setHoveredQ] = useState<number | null>(null);
     const [hoveredTopic, setHoveredTopic] = useState<number | null>(null);
     const c = rc(role.name);
     const roleDesc = role.opening_role_description || role.focus_area || "";
@@ -540,6 +534,8 @@ function CheckIcon({ done, isNew }: { done: boolean; isNew: boolean }) {
     );
 }
 
+// Retained for the checklist-based UI variant; the current flow renders MissionPanel instead.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, teachingGoals, roles, rolesVisited }: {
     checklistItems: ApiChecklistItem[];
     checklistCompleted: number[];
@@ -888,10 +884,6 @@ export default function SessionPage() {
     const [caseId, setCaseId]           = useState<string>("");
     const [sessionStatus, setStatus]    = useState<string>("in_progress");
     const [messages, setMessages]       = useState<ApiMessage[]>([]);
-    const [evidence, setEvidence]       = useState<ApiEvidence[]>([]);
-    const [checklistItems, setChecklistItems]           = useState<ApiChecklistItem[]>([]);
-    const [checklistCompleted, setChecklistCompleted]   = useState<number[]>([]);
-    const [newlyCheckedItems, setNewlyCheckedItems]     = useState<Set<number>>(new Set());
     const [rolesVisited, setRolesVisited] = useState<string[]>([]);
     const [missionState, setMissionState] = useState<MissionState>(DEFAULT_MISSION_STATE);
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -900,8 +892,6 @@ export default function SessionPage() {
     const [sending, setSending]           = useState(false);
     const [loading, setLoading]           = useState(true);
     const [error, setError]               = useState<string | null>(null);
-    const infoSufficient = missionState.phase === "complete";
-
     useEffect(() => {
         const u = getCurrentUser();
         if (!u) { router.push("/login"); return; }
@@ -911,15 +901,11 @@ export default function SessionPage() {
         Promise.all([
             api.sessions.get(sessionId),
             api.sessions.getMessages(sessionId),
-            api.sessions.getEvidence(sessionId),
         ])
-            .then(async ([session, msgs, ev]) => {
+            .then(async ([session, msgs]) => {
                 setStatus(session.status);
                 setRolesVisited(session.interviewed_roles);
                 setMessages(msgs);
-                setEvidence(ev.evidence_board);
-                setChecklistItems(ev.checklist_items ?? []);
-                setChecklistCompleted(ev.checklist_completed ?? []);
                 if (session.mission_state) {
                     setMissionState(session.mission_state);
                 }
@@ -947,18 +933,10 @@ export default function SessionPage() {
 
         try {
             const res = await api.sessions.sendMessage(sessionId, roleName, text);
-            const evidenceResult = await api.sessions.getEvidence(sessionId);
             setMessages((prev) => [...prev, {
                 id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
                 agent_name: res.agent_name, content: res.reply, created_at: new Date().toISOString(),
             }]);
-            const allEvidence = evidenceResult.evidence_board;
-            setEvidence(allEvidence);
-            setChecklistCompleted(res.checklist_completed ?? evidenceResult.checklist_completed ?? []);
-            if ((res.newly_checked_items ?? []).length > 0) {
-                setNewlyCheckedItems(new Set(res.newly_checked_items));
-                setTimeout(() => setNewlyCheckedItems(new Set()), 3000);
-            }
             setRolesVisited(res.roles_visited);
             if (res.mission_state) {
                 setMissionState(res.mission_state);

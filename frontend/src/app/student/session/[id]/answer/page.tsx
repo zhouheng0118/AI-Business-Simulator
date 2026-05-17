@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import {
-    api, ApiCaseDetail, ApiEvidence, ApiQuestion, ApiSession,
+    api, ApiCaseDetail, ApiEvidence, ApiQuestion,
 } from "@/lib/api";
 
 const DEFAULT_QUESTIONS: Record<string, ApiQuestion> = {
@@ -110,30 +110,38 @@ function TopBar({
     );
 }
 
-function EvidenceCard({ item }: { item: ApiEvidence }) {
+function EvidenceCard({ item, selected, onToggle }: { item: ApiEvidence; selected?: boolean; onToggle?: () => void }) {
     const cat = evidenceCategory(item.source);
     return (
-        <div style={{ background: "#ffffff", border: "1px solid #e8e8ed", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+        <button
+            type="button"
+            onClick={onToggle}
+            style={{ width: "100%", textAlign: "left", background: selected ? "#eef6ff" : "#ffffff", border: selected ? "1.5px solid #0066cc" : "1px solid #e8e8ed", borderRadius: 8, padding: "10px 12px", marginBottom: 8, cursor: onToggle ? "pointer" : "default", fontFamily: "SF Pro Text, system-ui" }}
+        >
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: cat.bg, color: cat.color, letterSpacing: "0.02em" }}>{cat.label}</span>
                 <span style={{ fontSize: 10, color: "#7a7a7a" }}>{item.source}</span>
+                {selected && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: "#0066cc" }}>Cited</span>}
             </div>
             <p style={{ fontSize: 12, color: "#1d1d1f", margin: "0 0 4px", lineHeight: 1.4, fontWeight: 500 }}>{item.key_info}</p>
             {item.data && <p style={{ fontSize: 11, color: "#5a5a5f", margin: 0, lineHeight: 1.3 }}>{item.data}</p>}
-        </div>
+        </button>
     );
 }
 
 function QuestionCard({
-    question, index, value, onChange,
+    question, index, value, citedCount, active, onChange, onFocus,
 }: {
     question: ApiQuestion;
     index: number;
     value: string;
+    citedCount: number;
+    active: boolean;
     onChange: (v: string) => void;
+    onFocus: () => void;
 }) {
     const wc = wordCount(value);
-    const minWords = 80;
+    const minWords = 30;
     const tooShort = wc < minWords;
 
     const TYPE_LABEL: Record<string, string> = { decision: "Decision", analysis: "Analysis", reflection: "Reflection" };
@@ -145,13 +153,16 @@ function QuestionCard({
     const tc = TYPE_COLOR[question.type] ?? { bg: "#f5f5f7", color: "#7a7a7a" };
 
     return (
-        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
+        <div style={{ background: "#ffffff", border: active ? "1.5px solid #0066cc" : "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                 <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#0066cc", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     {index + 1}
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: tc.bg, color: tc.color, letterSpacing: "0.02em" }}>
                     {TYPE_LABEL[question.type] ?? question.type}
+                </span>
+                <span style={{ marginLeft: "auto", fontSize: 11, color: citedCount > 0 ? "#0066cc" : "#94a3b8", fontWeight: 700 }}>
+                    {citedCount} cited evidence
                 </span>
             </div>
 
@@ -175,7 +186,7 @@ function QuestionCard({
                 placeholder="Type your answer here. Reference specific evidence from your interviews and address the key risks…"
                 rows={12}
                 style={{ width: "100%", boxSizing: "border-box", border: "1px solid #d0d0d8", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#1d1d1f", lineHeight: 1.6, fontFamily: "SF Pro Text, system-ui", resize: "vertical", outline: "none", background: "#fafafa", transition: "border-color 0.15s" }}
-                onFocus={(e) => { e.target.style.borderColor = "#0066cc"; e.target.style.background = "#ffffff"; }}
+                onFocus={(e) => { onFocus(); e.target.style.borderColor = "#0066cc"; e.target.style.background = "#ffffff"; }}
                 onBlur={(e) => { e.target.style.borderColor = "#d0d0d8"; e.target.style.background = "#fafafa"; }}
             />
 
@@ -184,7 +195,7 @@ function QuestionCard({
                     {wc} words {tooShort ? `(aim for ${minWords}+)` : "✓"}
                 </span>
                 <span style={{ fontSize: 11, color: "#7a7a7a" }}>
-                    Tip: cite specific data points (e.g. "$2.5M cost", "3-month runway")
+                    Tip: cite specific data points such as $2.5M cost or 3-month runway.
                 </span>
             </div>
         </div>
@@ -197,10 +208,11 @@ export default function AnswerPage() {
     const params = useParams();
     const sessionId = params.id as string;
 
-    const [session, setSession]   = useState<ApiSession | null>(null);
     const [detail, setDetail]     = useState<ApiCaseDetail | null>(null);
     const [evidence, setEvidence] = useState<ApiEvidence[]>([]);
     const [answers, setAnswers]   = useState<Record<string, string>>({});
+    const [activeQuestionId, setActiveQuestionId] = useState<string>("");
+    const [citedByQuestion, setCitedByQuestion] = useState<Record<string, number[]>>({});
     const [loading, setLoading]   = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError]       = useState<string | null>(null);
@@ -219,7 +231,6 @@ export default function AnswerPage() {
                     router.replace(`/student/session/${sessionId}`);
                     return null;
                 }
-                setSession(sess);
                 return Promise.all([
                     api.cases.get(sess.case_id),
                     api.sessions.getEvidence(sessionId),
@@ -233,8 +244,14 @@ export default function AnswerPage() {
 
                 const qs = getQuestions(caseDetail);
                 const init: Record<string, string> = {};
-                qs.forEach((q) => { init[q.id] = ""; });
+                const citedInit: Record<string, number[]> = {};
+                qs.forEach((q) => {
+                    init[q.id] = "";
+                    citedInit[q.id] = [];
+                });
                 setAnswers(init);
+                setCitedByQuestion(citedInit);
+                setActiveQuestionId(qs[0]?.id ?? "");
             })
             .catch(() => setError("Could not load case. Make sure the backend is running."))
             .finally(() => setLoading(false));
@@ -247,9 +264,23 @@ export default function AnswerPage() {
         return [DEFAULT_QUESTIONS[caseType] ?? DEFAULT_QUESTIONS.decision];
     }
 
-    const questions = detail ? getQuestions(detail) : [];
+    const questions = useMemo(() => detail ? getQuestions(detail) : [], [detail]);
 
     const canSubmit = questions.length > 0 && questions.every((q) => wordCount(answers[q.id] ?? "") >= 30);
+
+    function toggleEvidence(index: number) {
+        const qid = activeQuestionId || questions[0]?.id;
+        if (!qid) return;
+        setCitedByQuestion((prev) => {
+            const current = prev[qid] ?? [];
+            return {
+                ...prev,
+                [qid]: current.includes(index)
+                    ? current.filter((i) => i !== index)
+                    : [...current, index],
+            };
+        });
+    }
 
     const handleSubmit = useCallback(async () => {
         if (!canSubmit || submitting) return;
@@ -260,7 +291,9 @@ export default function AnswerPage() {
                 questions.map((q) => ({
                     question_id: q.id,
                     answer: answers[q.id] ?? "",
-                    cited_evidence: [],
+                    cited_evidence: (citedByQuestion[q.id] ?? [])
+                        .map((index) => evidence[index])
+                        .filter(Boolean),
                 })),
             );
             router.push(`/student/session/${sessionId}/report`);
@@ -268,7 +301,7 @@ export default function AnswerPage() {
             setError("Submission failed. Please try again.");
             setSubmitting(false);
         }
-    }, [canSubmit, submitting, sessionId, questions, answers, router]);
+    }, [canSubmit, submitting, sessionId, questions, answers, citedByQuestion, evidence, router]);
 
     const caseName = detail?.case?.title ?? "Business Case";
 
@@ -320,7 +353,10 @@ export default function AnswerPage() {
                                 question={q}
                                 index={i}
                                 value={answers[q.id] ?? ""}
+                                active={activeQuestionId === q.id}
+                                citedCount={(citedByQuestion[q.id] ?? []).length}
                                 onChange={(v) => setAnswers((prev) => ({ ...prev, [q.id]: v }))}
+                                onFocus={() => setActiveQuestionId(q.id)}
                             />
                         ))}
 
@@ -341,13 +377,23 @@ export default function AnswerPage() {
                     <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
                         Your Evidence ({evidence.length})
                     </div>
+                    <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "9px 10px", marginBottom: 12, fontSize: 11, color: "#1e3a8a", lineHeight: 1.45 }}>
+                        Select an answer, then click evidence cards to cite them.
+                    </div>
 
                     {evidence.length === 0 ? (
                         <div style={{ fontSize: 12, color: "#a0a0a8", textAlign: "center", paddingTop: 24 }}>
                             No evidence collected.
                         </div>
                     ) : (
-                        evidence.map((item, i) => <EvidenceCard key={i} item={item} />)
+                        evidence.map((item, i) => (
+                            <EvidenceCard
+                                key={i}
+                                item={item}
+                                selected={(citedByQuestion[activeQuestionId] ?? []).includes(i)}
+                                onToggle={() => toggleEvidence(i)}
+                            />
+                        ))
                     )}
 
                     <div style={{ marginTop: 16, padding: "10px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8 }}>

@@ -35,28 +35,6 @@ const TAB_ITEMS: { key: Tab; label: string }[] = [
     { key: "layers", label: "Information Layers" },
 ];
 
-function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
-    const tabs: { key: Tab; label: string }[] = [
-        { key: "overview",  label: "Overview" },
-        { key: "roles",     label: "Stakeholder Roles" },
-        { key: "questions", label: "Discussion Questions" },
-        { key: "layers",    label: "Information Layers" },
-    ];
-    return (
-        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e0e0e0", marginBottom: 20 }}>
-            {tabs.map((t) => (
-                <button
-                    key={t.key}
-                    onClick={() => onChange(t.key)}
-                    style={{ padding: "10px 20px", background: "none", border: "none", borderBottom: active === t.key ? "2px solid #0066cc" : "2px solid transparent", color: active === t.key ? "#0066cc" : "#7a7a7a", fontSize: 13, fontWeight: active === t.key ? 600 : 400, cursor: "pointer", fontFamily: "SF Pro Text, system-ui", marginBottom: -1, transition: "color 0.12s" }}
-                >
-                    {t.label}
-                </button>
-            ))}
-        </div>
-    );
-}
-
 function RoleCard({ role }: { role: ApiPlaybookRole }) {
     const c = rc(role.name);
     return (
@@ -68,7 +46,7 @@ function RoleCard({ role }: { role: ApiPlaybookRole }) {
             </div>
             {role.persona && (
                 <p style={{ fontSize: 12, color: "#3d3d3f", margin: "0 0 10px", lineHeight: 1.5, fontStyle: "italic" }}>
-                    "{role.persona}"
+                    {role.persona}
                 </p>
             )}
             <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Focus Area</div>

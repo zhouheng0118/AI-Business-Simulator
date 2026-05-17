@@ -206,7 +206,7 @@ export default function ReportPage() {
                         {qs.feedback && (
                             <div style={{ marginTop: 14, padding: "12px 14px", background: "#f5f5f7", borderRadius: 8, borderLeft: "3px solid #0066cc" }}>
                                 <p style={{ fontSize: 13, color: "#3d3d3f", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>
-                                    "{qs.feedback}"
+                                    {qs.feedback}
                                 </p>
                             </div>
                         )}

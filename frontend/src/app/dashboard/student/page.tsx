@@ -220,8 +220,8 @@ export default function StudentDashboard() {
             label: "Learning",
             items: [
                 { icon: <IconGrid />,   label: "Case Library",    active: true },
-                { icon: <IconChart />,  label: "My Progress" },
-                { icon: <IconReport />, label: "Debrief Reports" },
+                { icon: <IconChart />,  label: "My Progress", onClick: () => router.push("/dashboard/student/progress") },
+                { icon: <IconReport />, label: "Debrief Reports", onClick: () => router.push("/dashboard/student/reports") },
             ],
         },
     ];

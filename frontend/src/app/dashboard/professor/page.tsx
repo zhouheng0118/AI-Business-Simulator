@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, logout, User } from "@/lib/auth";
-import { api, ApiCase, ApiCaseStats, difficultyLabel, formatDue } from "@/lib/api";
+import { api, ApiCase, ApiCaseStats, difficultyLabel } from "@/lib/api";
 import DashboardLayout, { NavSection, NavItem } from "@/components/dashboard/DashboardLayout";
 import {
-    Avatar, Badge, Tag, StatCard, ActionBtn,
+    Avatar, Badge,
     LoadingState, ErrorState, EmptyState,
     IconGrid, IconUsers, IconUser, IconSettings, IconLogout, IconPlus,
 } from "@/components/dashboard/shared";
@@ -66,7 +66,7 @@ export default function ProfessorDashboard() {
             label: "Simulations",
             items: [
                 { icon: <IconGrid />,  label: "My Simulations", active: true },
-                { icon: <IconUsers />, label: "Student Analytics" },
+                { icon: <IconUsers />, label: "Student Analytics", onClick: () => router.push("/dashboard/professor/analytics") },
             ],
             accentColor: "#b91c1c", // Wine-red accent for sidebar
         },
@@ -196,6 +196,7 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
     async function handleDelete() {
+        if (deleting) return;
         setDeleting(true);
         setDeleteError(null);
         try {
@@ -308,8 +309,8 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
                             fontFamily: "SF Pro Text, system-ui",
                             transition: "background 0.12s"
                         }}
-                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
-                    >View Analytics</button>
+                        onClick={() => router.push(`/dashboard/professor/analytics?caseId=${data.id}`)}
+                    >Analytics</button>
                     <button
                         style={{
                             flex: 1,
@@ -385,4 +386,3 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
         </div>
     );
 }
-

@@ -641,3 +641,116 @@ def get_case_stats(case_id: str) -> dict:
         "sessions_submitted": len(submitted_ids),
         "avg_score": avg_score,
     }
+
+
+def get_student_analytics(case_id: str | None = None) -> dict:
+    """Return professor-facing student progress rows and aggregate metrics."""
+    client = _get_client()
+
+    case_query = client.table("cases").select("id, title, status").order("created_at", desc=True)
+    cases = case_query.execute().data
+    case_by_id = {case["id"]: case for case in cases}
+
+    session_query = (
+        client.table("sessions")
+        .select(
+            "id, case_id, student_id, status, evidence_board, interviewed_roles, "
+            "checklist_completed, mission_state, started_at, submitted_at"
+        )
+        .order("started_at", desc=True)
+    )
+    if case_id:
+        session_query = session_query.eq("case_id", case_id)
+    sessions = session_query.execute().data
+
+    session_ids = [session["id"] for session in sessions]
+    reports_by_session: dict[str, dict] = {}
+    submissions_by_session: dict[str, list] = {}
+    if session_ids:
+        reports = (
+            client.table("reports")
+            .select("session_id, total_score, total_max, generated_at")
+            .in_("session_id", session_ids)
+            .execute()
+            .data
+        )
+        reports_by_session = {report["session_id"]: report for report in reports}
+
+        submissions = (
+            client.table("submissions")
+            .select("session_id, question_id, answer, cited_evidence")
+            .in_("session_id", session_ids)
+            .execute()
+            .data
+        )
+        for submission in submissions:
+            submissions_by_session.setdefault(submission["session_id"], []).append(submission)
+
+    rows = []
+    scored_percentages = []
+    submitted_count = 0
+    evidence_total = 0
+    roles_total = 0
+
+    for session in sessions:
+        report = reports_by_session.get(session["id"])
+        evidence = session.get("evidence_board") or []
+        roles = session.get("interviewed_roles") or []
+        checklist_completed = session.get("checklist_completed") or []
+        submissions = submissions_by_session.get(session["id"], [])
+        status = session.get("status") or "in_progress"
+        is_submitted = status in ("submitted", "scored")
+        submitted_count += 1 if is_submitted else 0
+        evidence_total += len(evidence)
+        roles_total += len(roles)
+
+        total_score = report.get("total_score") if report else None
+        total_max = report.get("total_max") if report else None
+        score_percent = None
+        if total_score is not None and total_max:
+            score_percent = round(float(total_score) / float(total_max) * 100, 1)
+            scored_percentages.append(score_percent)
+
+        cited_count = 0
+        for submission in submissions:
+            cited_count += len(submission.get("cited_evidence") or [])
+
+        case = case_by_id.get(session["case_id"], {})
+        rows.append(
+            {
+                "session_id": session["id"],
+                "student_id": session.get("student_id"),
+                "case_id": session.get("case_id"),
+                "case_title": case.get("title", "Untitled Case"),
+                "case_status": case.get("status", "draft"),
+                "status": status,
+                "started_at": session.get("started_at"),
+                "submitted_at": session.get("submitted_at"),
+                "generated_at": report.get("generated_at") if report else None,
+                "roles_visited": roles,
+                "roles_count": len(roles),
+                "evidence_count": len(evidence),
+                "checklist_completed_count": len(checklist_completed),
+                "answers_count": len(submissions),
+                "cited_evidence_count": cited_count,
+                "total_score": float(total_score) if total_score is not None else None,
+                "total_max": float(total_max) if total_max is not None else None,
+                "score_percent": score_percent,
+                "mission_phase": (session.get("mission_state") or {}).get("phase"),
+            }
+        )
+
+    total_sessions = len(rows)
+    return {
+        "overview": {
+            "total_sessions": total_sessions,
+            "submitted_sessions": submitted_count,
+            "in_progress_sessions": len([r for r in rows if r["status"] == "in_progress"]),
+            "avg_score_percent": round(sum(scored_percentages) / len(scored_percentages), 1)
+            if scored_percentages
+            else None,
+            "avg_evidence_count": round(evidence_total / total_sessions, 1) if total_sessions else 0,
+            "avg_roles_count": round(roles_total / total_sessions, 1) if total_sessions else 0,
+        },
+        "rows": rows,
+    }
