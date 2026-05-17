@@ -17,6 +17,12 @@ interface UploadedFile {
     required: boolean;
 }
 
+interface ExcelFile {
+    name: string;
+    sheets: string[];
+    text: string;
+}
+
 const TYPE_OPTIONS: { value: CaseType; label: string; desc: string }[] = [
     { value: "decision", label: "Decision", desc: "Students recommend a course of action" },
     { value: "analysis", label: "Analysis", desc: "Students analyze a business situation" },
@@ -109,9 +115,7 @@ export default function NewCasePage() {
     const [goalInput, setGoalInput] = useState("");
     const [uploadMode, setUploadMode] = useState<UploadMode>("file");
 
-    const [excelContent, setExcelContent] = useState("");
-    const [excelSheets, setExcelSheets] = useState<string[]>([]);
-    const [excelFileName, setExcelFileName] = useState("");
+    const [excelFiles, setExcelFiles] = useState<ExcelFile[]>([]);
     const [parsingExcel, setParsingExcel] = useState(false);
 
     const [generating, setGenerating] = useState(false);
@@ -140,21 +144,28 @@ export default function NewCasePage() {
             `=== ${f.required ? "Case Study" : `Supplementary Material: ${f.name}`} ===\n${f.text}`
         ),
         ...(pasteText.trim() ? [`=== Additional Notes ===\n${pasteText.trim()}`] : []),
-        ...(excelContent.trim() ? [`=== Financial Data (Excel: ${excelFileName}) ===\n${excelContent.trim()}`] : []),
+        ...excelFiles.map((f) => `=== Financial Data (Excel: ${f.name}) ===\n${f.text.trim()}`),
     ].join("\n\n");
 
-    async function handleExcelFile(file: File) {
-        if (!file.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
+    async function handleExcelFiles(files: FileList | File[]) {
+        const arr = Array.from(files).filter((f) => f.name.toLowerCase().match(/\.(xlsx|xls)$/));
+        if (!arr.length) {
             setError("Excel upload only supports .xlsx or .xls files.");
             return;
         }
         setParsingExcel(true);
         setError(null);
         try {
-            const result = await api.professor.parseExcel(file);
-            setExcelContent(result.text);
-            setExcelSheets(result.sheets);
-            setExcelFileName(file.name);
+            const results = await Promise.all(
+                arr.map(async (f) => {
+                    const result = await api.professor.parseExcel(f);
+                    return { name: f.name, sheets: result.sheets, text: result.text } as ExcelFile;
+                })
+            );
+            setExcelFiles((prev) => {
+                const existing = new Set(prev.map((f) => f.name));
+                return [...prev, ...results.filter((f) => !existing.has(f.name))];
+            });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             setError(`Could not read Excel file: ${msg}. Make sure the backend is running and openpyxl is installed.`);
@@ -710,30 +721,18 @@ export default function NewCasePage() {
                                 ref={excelInputRef}
                                 type="file"
                                 accept=".xlsx,.xls"
+                                multiple
                                 style={{ display: "none" }}
                                 onChange={(e) => {
-                                    if (e.target.files?.[0]) handleExcelFile(e.target.files[0]);
+                                    if (e.target.files?.length) handleExcelFiles(e.target.files);
                                     e.target.value = "";
                                 }}
                             />
 
-                            <div
-                                onClick={() => !parsingExcel && excelInputRef.current?.click()}
-                                style={{
-                                    border: `2px dashed ${parsingExcel ? "#b91c1c" : "#fca5a5"}`,
-                                    borderRadius: 12,
-                                    padding: "34px 16px",
-                                    marginBottom: excelContent ? 12 : 0,
-                                    textAlign: "center",
-                                    cursor: parsingExcel ? "not-allowed" : "pointer",
-                                    background: parsingExcel ? "#fff5f5" : "#fafafa",
-                                    transition: "all 0.15s",
-                                    position: "relative",
-                                }}
-                            >
-                                {excelContent ? (
-                                    <div style={{ border: "1px solid #e0e0e0", borderRadius: 8, overflow: "hidden" }}>
-                                        <div style={{ display: "flex", alignItems: "center", padding: "10px 12px", gap: 10, background: "#fff" }}>
+                            {excelFiles.length > 0 && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                                    {excelFiles.map((f) => (
+                                        <div key={f.name} style={{ display: "flex", alignItems: "center", padding: "8px 12px", gap: 10, background: "#fff", border: "1px solid #e0e0e0", borderRadius: 8 }}>
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d8a4f" strokeWidth="1.8" strokeLinecap="round">
                                                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                                                 <polyline points="14 2 14 8 20 8" />
@@ -741,27 +740,32 @@ export default function NewCasePage() {
                                                 <line x1="8" y1="17" x2="16" y2="17" />
                                             </svg>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: 12, fontWeight: 500, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{excelFileName}</div>
-                                                <div style={{ fontSize: 10, color: "#a0a0a8", marginTop: 1 }}>{excelSheets.length} sheet{excelSheets.length !== 1 ? "s" : ""}</div>
+                                                <div style={{ fontSize: 12, fontWeight: 500, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                                                <div style={{ fontSize: 10, color: "#a0a0a8", marginTop: 1 }}>{f.sheets.length} sheet{f.sheets.length !== 1 ? "s" : ""}</div>
                                             </div>
-                                            <button type="button" onClick={() => excelInputRef.current?.click()} style={{ fontSize: 11, color: "#991b1b", background: "none", border: "none", cursor: "pointer", fontFamily: "SF Pro Text, system-ui" }}>
-                                                Replace
-                                            </button>
                                             <button
                                                 type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setExcelContent("");
-                                                    setExcelSheets([]);
-                                                    setExcelFileName("");
-                                                }}
+                                                onClick={() => setExcelFiles((prev) => prev.filter((x) => x.name !== f.name))}
                                                 style={{ background: "none", border: "none", cursor: "pointer", color: "#a0a0a8", fontSize: 16, lineHeight: 1, padding: "0 2px" }}
-                                            >
-                                                ×
-                                            </button>
+                                            >×</button>
                                         </div>
-                                    </div>
-                                ) : parsingExcel ? (
+                                    ))}
+                                </div>
+                            )}
+
+                            <div
+                                onClick={() => !parsingExcel && excelInputRef.current?.click()}
+                                style={{
+                                    border: `2px dashed ${parsingExcel ? "#b91c1c" : "#fca5a5"}`,
+                                    borderRadius: 12,
+                                    padding: "24px 16px",
+                                    textAlign: "center",
+                                    cursor: parsingExcel ? "not-allowed" : "pointer",
+                                    background: parsingExcel ? "#fff5f5" : "#fafafa",
+                                    transition: "all 0.15s",
+                                }}
+                            >
+                                {parsingExcel ? (
                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 0.9s linear infinite" }}>
                                             <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" />
@@ -771,15 +775,15 @@ export default function NewCasePage() {
                                     </div>
                                 ) : (
                                     <>
-                                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="1.9" strokeLinecap="round" style={{ marginBottom: 9 }}>
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="1.9" strokeLinecap="round" style={{ marginBottom: 7 }}>
                                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
                                             <polyline points="17 8 12 3 7 8" />
                                             <line x1="12" y1="3" x2="12" y2="15" />
                                         </svg>
                                         <div style={{ fontSize: 13, fontWeight: 600, color: "#3d3d3f", marginBottom: 3 }}>
-                                            Drag & drop Excel here, or <span style={{ color: "#b91c1c" }}>click to browse</span>
+                                            {excelFiles.length > 0 ? "Add more Excel files" : <>Drag & drop Excel here, or <span style={{ color: "#b91c1c" }}>click to browse</span></>}
                                         </div>
-                                        <div style={{ fontSize: 11, color: "#a0a0a8" }}>Supports .xlsx, .xls</div>
+                                        <div style={{ fontSize: 11, color: "#a0a0a8" }}>Supports .xlsx, .xls · multiple files</div>
                                     </>
                                 )}
                             </div>
