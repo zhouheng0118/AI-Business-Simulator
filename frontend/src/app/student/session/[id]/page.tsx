@@ -494,15 +494,20 @@ function ChatBubble({ msg, roleName }: { msg: ApiMessage; roleName: string }) {
 function TypingIndicator({ roleName }: { roleName: string }) {
     const c = rc(roleName);
     return (
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {roleName.charAt(0)}
             </div>
-            <div style={{ background: "#f0f0f5", borderRadius: "14px 14px 14px 4px", padding: "10px 14px", display: "flex", gap: 4, alignItems: "center" }}>
-                {[0, 1, 2].map((i) => (
-                    <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#b0b0b0", animation: `typingBounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
-                ))}
-                <style>{`@keyframes typingBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
+            <div style={{ background: "#ffffff", border: `1px solid ${c.border}`, borderRadius: "12px 12px 12px 4px", padding: "9px 12px", boxShadow: "0 2px 10px rgba(15,23,42,0.06)" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: c.accent, marginBottom: 5, letterSpacing: "0.01em" }}>
+                    {roleName}
+                </div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center", height: 14 }}>
+                    {[0, 1, 2].map((i) => (
+                        <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#b0b0b0", animation: `typingBounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+                    ))}
+                    <style>{`@keyframes typingBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
+                </div>
             </div>
         </div>
     );
