@@ -438,17 +438,22 @@ async def _generate_checklist_items(
     teaching_goals: list[str],
     raw_content: str,
     title: str = "",
+    roles: list | None = None,
 ) -> list:
     """Generate 3-5 investigation checklist items per teaching goal.
 
     Returns a list of checklist items:
-      [{objective_index, task, completion_condition}]
+      [{objective_index, task, completion_condition, suggested_roles}]
     """
     if not teaching_goals:
         return []
 
     goals_text = "\n".join(f"{i+1}. {g}" for i, g in enumerate(teaching_goals))
     content_excerpt = raw_content.strip()[:3000]
+    role_names = [r["name"] for r in (roles or [])] or [
+        "CEO", "CFO", "Operations Director", "Customer Representative", "Local Expert"
+    ]
+    roles_list = ", ".join(role_names)
 
     prompt = f"""You are designing an investigation checklist for business school students.
 
@@ -456,6 +461,8 @@ Case Title: {title}
 
 Teaching Goals (what students must learn):
 {goals_text}
+
+Available stakeholder roles: {roles_list}
 
 Case Content (excerpt):
 {content_excerpt}
@@ -472,7 +479,8 @@ Return ONLY valid JSON, no markdown:
   {{
     "objective_index": 0,
     "task": "<topic label noun phrase, e.g. 'Cash runway timeline' or 'Revenue growth assumptions'>",
-    "completion_condition": "<specific: what the student must ask or demonstrate in conversation for this to count as done>"
+    "completion_condition": "<specific: what the student must ask or demonstrate in conversation for this to count as done>",
+    "suggested_roles": ["<role name from the available roles list>"]
   }}
 ]
 
@@ -480,6 +488,7 @@ Requirements:
 - objective_index is 0-based (0 = first goal, 1 = second goal, etc.)
 - task is ≤8 words, noun phrase (topic label), specific to this case — do NOT use "Ask [role] about" framing
 - completion_condition is one sentence, concrete, evaluatable by reading conversation history
+- suggested_roles: 1-2 role names from the available roles list who are the PRIMARY owners of this item; use [] if any agent could address it
 - Generate 3-5 items per teaching goal — no more, no less
 - Cover different stakeholders across the items for each goal"""
 
@@ -517,10 +526,126 @@ def _parse_checklist_items(raw: str, num_objectives: int) -> list:
             idx = 0
         if idx < 0 or idx >= num_objectives:
             idx = 0
+        suggested_roles = [
+            str(r).strip() for r in (item.get("suggested_roles") or []) if str(r).strip()
+        ]
         result.append({
             "objective_index": idx,
             "task": task,
             "completion_condition": condition,
+            "suggested_roles": suggested_roles,
+        })
+
+    return result
+
+
+async def _generate_calculation_challenges(
+    teaching_goals: list[str],
+    raw_content: str,
+    roles: list,
+    title: str = "",
+) -> list:
+    """Generate quantitative calculation challenges from teaching goals.
+
+    Returns a list of challenges:
+      [{metric, formula_hint, required_data[], owner_roles[], objective_index, expected_insight}]
+    """
+    if not teaching_goals:
+        return []
+
+    goals_text = "\n".join(f"Goal {i} (objective_index={i}): {g}" for i, g in enumerate(teaching_goals))
+    content_excerpt = raw_content.strip()[:5000]
+    role_names = [r["name"] for r in roles]
+    roles_list = ", ".join(role_names)
+
+    prompt = f"""You are designing quantitative challenges for a business school simulation.
+
+Case Title: {title}
+Available stakeholder roles: {roles_list}
+
+Teaching Goals:
+{goals_text}
+
+Case Content:
+{content_excerpt}
+
+For each teaching goal, identify 1-3 metrics a student would need to calculate to achieve that goal.
+Only include metrics that are genuinely derivable from numbers present in the case content.
+
+For each metric, specify:
+1. The formula or calculation approach (as a hint)
+2. The specific named data inputs required (e.g. "India ARPU", "licensing cost percentage")
+3. Which role(s) from the available roles hold those inputs
+4. What a correct answer should reveal (expected_insight)
+
+Return ONLY valid JSON, no markdown:
+[
+  {{
+    "metric": "<short name of the metric to calculate>",
+    "formula_hint": "<formula or calculation approach>",
+    "required_data": ["<named data input 1>", "<named data input 2>"],
+    "owner_roles": ["<role name from the available roles>"],
+    "objective_index": 0,
+    "expected_insight": "<what a correct calculation reveals — be specific with numbers if possible>"
+  }}
+]
+
+Requirements:
+- Only include metrics where all required_data inputs appear in the case content
+- formula_hint is a brief algebra hint, not a full solution
+- required_data labels should match how the data appears in the case (e.g. "India ARPU" not "revenue per user")
+- owner_roles must be from the available roles list
+- objective_index must match one of the teaching goal indices
+- Return [] if no concrete calculations are derivable from the case content"""
+
+    raw = await complete(prompt, max_tokens=1200, temperature=0.2)
+    return _parse_calculation_challenges(raw, len(teaching_goals))
+
+
+def _parse_calculation_challenges(raw: str, num_objectives: int) -> list:
+    """Parse and validate calculation challenges from LLM output."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        items = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(items, list):
+        return []
+
+    result = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric") or "").strip()
+        formula_hint = str(item.get("formula_hint") or "").strip()
+        expected_insight = str(item.get("expected_insight") or "").strip()
+        if not metric or not formula_hint:
+            continue
+        required_data = [
+            str(d).strip() for d in (item.get("required_data") or []) if str(d).strip()
+        ]
+        owner_roles = [
+            str(r).strip() for r in (item.get("owner_roles") or []) if str(r).strip()
+        ]
+        raw_idx = item.get("objective_index")
+        try:
+            idx = int(raw_idx)
+        except (TypeError, ValueError):
+            idx = 0
+        if idx < 0 or idx >= num_objectives:
+            idx = 0
+        result.append({
+            "metric": metric,
+            "formula_hint": formula_hint,
+            "required_data": required_data,
+            "owner_roles": owner_roles,
+            "objective_index": idx,
+            "expected_insight": expected_insight,
         })
 
     return result
@@ -729,7 +854,7 @@ Requirements:
     # All secondary passes run in parallel to reduce total generation time.
     # opening_fields is a dedicated call so token limits on the main prompt
     # never silently drop the opening card data.
-    opening_fields, info_atoms, checklist_items = await asyncio.gather(
+    opening_fields, info_atoms, checklist_items, calculation_challenges = await asyncio.gather(
         _generate_opening_fields(raw_content, title),
         _generate_all_info_atoms(
             raw_content,
@@ -737,7 +862,8 @@ Requirements:
             title=title,
             teaching_goals=teaching_goals,
         ),
-        _generate_checklist_items(teaching_goals, raw_content, title),
+        _generate_checklist_items(teaching_goals, raw_content, title, roles=playbook["roles"]),
+        _generate_calculation_challenges(teaching_goals, raw_content, playbook["roles"], title),
     )
 
     # Merge opening fields into roles; prefer dedicated-call results but keep
@@ -754,6 +880,7 @@ Requirements:
 
     playbook["info_atoms"] = info_atoms
     playbook["checklist_items"] = checklist_items
+    playbook["calculation_challenges"] = calculation_challenges
 
     return playbook
 

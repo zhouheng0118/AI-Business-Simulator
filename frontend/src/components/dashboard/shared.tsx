@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 
-export function SbLabel({ children }: { children: React.ReactNode }) {
+export function SbLabel({ children, hidden }: { children: React.ReactNode; hidden?: boolean }) {
+    if (hidden) return null;
     return (
         <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", padding: "8px 10px 4px" }}>
             {children}
@@ -11,23 +12,46 @@ export function SbLabel({ children }: { children: React.ReactNode }) {
     );
 }
 
-export function SbItem({ icon, label, active, onClick, danger }: {
+export function SbItem({ icon, label, active, onClick, danger, compact }: {
     icon: React.ReactNode;
     label: string;
     active?: boolean;
     onClick?: () => void;
     danger?: boolean;
+    /** Icon-only row (narrow sidebar); label shown in tooltip. */
+    compact?: boolean;
 }) {
     const [hovered, setHovered] = useState(false);
     return (
         <button
+            type="button"
+            title={compact ? label : undefined}
+            aria-label={label}
             onClick={onClick}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", borderRadius: 7, border: "none", cursor: "pointer", background: active ? "#f0f0f5" : hovered ? "#f5f5f7" : "transparent", color: danger ? "#ff3b30" : active ? "#0066cc" : "#1d1d1f", fontSize: 13, fontWeight: active ? 600 : 400, textAlign: "left", fontFamily: "SF Pro Text, system-ui", borderLeft: active ? "2px solid #0066cc" : "2px solid transparent", transition: "background 0.12s" }}
+            style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: compact ? "center" : "flex-start",
+                gap: compact ? 0 : 8,
+                width: "100%",
+                padding: compact ? "8px 0" : "7px 10px",
+                borderRadius: 7,
+                border: "none",
+                cursor: "pointer",
+                background: active ? "#f0f0f5" : hovered ? "#f5f5f7" : "transparent",
+                color: danger ? "#ff3b30" : active ? "#0066cc" : "#1d1d1f",
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                textAlign: "left",
+                fontFamily: "SF Pro Text, system-ui",
+                borderLeft: active ? "2px solid #0066cc" : "2px solid transparent",
+                transition: "background 0.12s",
+            }}
         >
             <span style={{ width: 16, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{icon}</span>
-            {label}
+            {!compact ? <span style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{label}</span> : null}
         </button>
     );
 }
@@ -50,11 +74,56 @@ export function Tag({ children }: { children: React.ReactNode }) {
     return <span style={{ fontSize: 11, color: "#7a7a7a", border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "2px 8px" }}>{children}</span>;
 }
 
-export function StatCard({ label, value, color = "#1d1d1f" }: { label: string; value: number | string; color?: string }) {
+export function StatCard({
+    label,
+    value,
+    color = "#1d1d1f",
+    gradient = "none",
+    fontSize = 24,
+    fontWeight = 600,
+}: {
+    label: string;
+    value: number | string;
+    color?: string;
+    /** Pastel gradient shell (student dashboard). Omit on other pages for white cards. */
+    gradient?: "none" | "blue" | "orange" | "green" | "slate";
+    fontSize?: number; // Custom font size
+    fontWeight?: number | string; // Custom font weight
+}) {
+    const shell: Record<typeof gradient, CSSProperties> = {
+        none: { background: "#ffffff", border: "1px solid #e0e0e0" },
+        blue: {
+            background: "linear-gradient(145deg, #e0f2fe 0%, #dbeafe 42%, #f8fafc 100%)",
+            border: "1px solid rgba(14, 165, 233, 0.14)",
+        },
+        orange: {
+            background: "linear-gradient(145deg, #ffedd5 0%, #fed7aa 40%, #fffbeb 100%)",
+            border: "1px solid rgba(234, 88, 12, 0.14)",
+        },
+        green: {
+            background: "linear-gradient(145deg, #dcfce7 0%, #bbf7d0 38%, #f0fdf4 100%)",
+            border: "1px solid rgba(22, 163, 74, 0.14)",
+        },
+        slate: {
+            background: "linear-gradient(145deg, #f1f5f9 0%, #e2e8f0 45%, #f8fafc 100%)",
+            border: "1px solid rgba(100, 116, 139, 0.16)",
+        },
+    };
+
     return (
-        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 10, padding: "14px 20px", display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
-            <span style={{ fontSize: 24, fontWeight: 600, color, lineHeight: 1 }}>{value}</span>
-            <span style={{ fontSize: 11, color: "#7a7a7a" }}>{label}</span>
+        <div
+            style={{
+                borderRadius: 10,
+                padding: "14px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 3,
+                flex: 1,
+                ...shell[gradient],
+            }}
+        >
+            <span style={{ fontSize, fontWeight, color, lineHeight: 1 }}>{value}</span>
+            <span style={{ fontSize: 11, color: gradient === "none" ? "#7a7a7a" : "#64748b", fontWeight: 500 }}>{label}</span>
         </div>
     );
 }

@@ -42,17 +42,17 @@ export interface ApiCase {
     status: "draft" | "published";
     teaching_goals: string[];
     created_at: string;
+    industry?: string; // Added industry field
 }
 
 export interface ApiPlaybookRole {
-    role_type?: "strategy" | "finance" | "operations" | "local_regulatory" | "customer_market" | string;
     name: string;
     title: string;
+    role_type?: string;
     persona?: string;
     focus_area: string;
     allowed_info?: string[];
     locked_info?: string[];
-    unlock_conditions?: string;
     opening_statement?: string;
     opening_role_description?: string;
     opening_topics?: string[];
@@ -80,9 +80,9 @@ export interface ApiPlaybook {
     case_id: string;
     version: number;
     roles: ApiPlaybookRole[];
+    questions: ApiQuestion[];
     info_atoms: ApiInfoAtom[];
     checklist_items: ApiChecklistItem[];
-    questions: ApiQuestion[];
     review_status: string;
 }
 
@@ -91,6 +91,22 @@ export interface ApiCaseDetail {
     playbook: ApiPlaybook | null;
 }
 
+export interface MissionState {
+    current_mission: number;
+    phase: "briefing" | "investigating" | "evaluating" | "complete";
+    active_agents: string[];
+    missions_completed: number[];
+    mission_reports: Record<string, string>;
+}
+
+export const DEFAULT_MISSION_STATE: MissionState = {
+    current_mission: 0,
+    phase: "briefing",
+    active_agents: ["CEO"],
+    missions_completed: [],
+    mission_reports: {},
+};
+
 export interface ApiSession {
     id: string;
     case_id: string;
@@ -98,6 +114,7 @@ export interface ApiSession {
     interviewed_roles: string[];
     started_at: string;
     submitted_at: string | null;
+    mission_state?: MissionState;
 }
 
 export interface ApiMessage {
@@ -126,7 +143,7 @@ export interface ApiSendMessageResponse {
     newly_unlocked: boolean;
     newly_checked_items: number[];
     checklist_completed: number[];
-    unlock_check_ms?: number;
+    mission_state?: MissionState;
 }
 
 export interface ApiAssignment {
@@ -235,15 +252,6 @@ export const api = {
             get<{ evidence_board: ApiEvidence[]; checklist_items: ApiChecklistItem[]; checklist_completed: number[] }>(`/sessions/${sessionId}/evidence`),
         sendMessage: (sessionId: string, roleName: string, message: string) =>
             post<ApiSendMessageResponse>(`/sessions/${sessionId}/messages`, { role_name: roleName, message }),
-        sendMessageStream: (sessionId: string, roleName: string, message: string): Promise<ReadableStream<Uint8Array>> =>
-            fetch(`${BASE}/sessions/${sessionId}/messages/stream`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ role_name: roleName, message }),
-            }).then((res) => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.body!;
-            }),
         proceed: (sessionId: string) =>
             post<{ status: string }>(`/sessions/${sessionId}/proceed`, {}),
         submit: (sessionId: string, answers: ApiSubmitAnswer[]) =>

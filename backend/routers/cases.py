@@ -286,6 +286,7 @@ async def create_case_and_generate(body: CreateCaseIn):
         questions=playbook_data["questions"],
         info_atoms=playbook_data.get("info_atoms", []),
         checklist_items=playbook_data.get("checklist_items", []),
+        calculation_challenges=playbook_data.get("calculation_challenges", []),
     )
 
     return {"case": case, "playbook": playbook}

@@ -68,6 +68,7 @@ export default function ProfessorDashboard() {
                 { icon: <IconGrid />,  label: "My Simulations", active: true },
                 { icon: <IconUsers />, label: "Student Analytics" },
             ],
+            accentColor: "#b91c1c", // Wine-red accent for sidebar
         },
     ];
 
@@ -79,7 +80,7 @@ export default function ProfessorDashboard() {
 
     const headerLeft = (
         <div>
-            <h1 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 22, fontWeight: 600, color: "#1d1d1f", letterSpacing: "-0.3px", margin: 0 }}>My Simulations</h1>
+            <h1 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 22, fontWeight: 600, color: "#b91c1c", letterSpacing: "-0.3px", margin: 0 }}>My Simulations</h1>
             <p style={{ fontSize: 13, color: "#7a7a7a", margin: "2px 0 0" }}>Manage and publish AI business cases for your students</p>
         </div>
     );
@@ -88,22 +89,56 @@ export default function ProfessorDashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
                 onClick={() => router.push("/professor/cases/new")}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 18px", background: "#0066cc", color: "#fff", border: "none", borderRadius: 9999, fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "SF Pro Text, system-ui", letterSpacing: "-0.14px" }}
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "9px 18px",
+                    background: "linear-gradient(120deg, #b91c1c 0%, #dc2626 45%, #2563eb 100%)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 9999,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontFamily: "SF Pro Text, system-ui",
+                    letterSpacing: "-0.14px",
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                    transition: "box-shadow 0.2s, transform 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = "0 6px 14px rgba(59, 63, 167, 0.28)";
+                    e.currentTarget.style.transform = "scale(1.02)";
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.1)";
+                    e.currentTarget.style.transform = "scale(1)";
+                }}
             >
                 <IconPlus /> Create New Simulation
             </button>
             <span style={{ fontSize: 13, color: "#7a7a7a" }}>{user.fullName}</span>
-            <Avatar name={user.fullName} color="#5856d6" />
+            <Avatar name={user.fullName} color="#2563eb" />
         </div>
     );
 
     const statsRow = !loading && !error ? (
-        <>
-            <StatCard label="Total Cases"      value={rows.length} />
-            <StatCard label="Published"        value={published}    color="#34c759" />
-            <StatCard label="Students Started" value={totalStudents} color="#0066cc" />
-            <StatCard label="Avg Class Score"  value={avgScore !== null ? `${avgScore}` : "—"} color="#ff9500" />
-        </>
+        <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 32px",
+            background: "#f8fafc",
+            borderRadius: 8,
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+        }}>
+            <span style={{ fontSize: 16, fontWeight: 500, color: "#b91c1c" }}>
+                {published}/6 published · <span style={{ color: "#2563eb" }}>{totalStudents} students started</span> · Avg score: <span style={{ color: "#2563eb" }}>{avgScore !== null ? avgScore : "—"}</span>
+            </span>
+            <div style={{ flex: 1, height: 6, background: "#e0e7ef", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ width: `${(published / 6) * 100}%`, height: "100%", background: "linear-gradient(90deg, #2563eb, #1e40af)" }} />
+            </div>
+        </div>
     ) : undefined;
 
     return (
@@ -114,20 +149,39 @@ export default function ProfessorDashboard() {
             headerLeft={headerLeft}
             headerRight={headerRight}
             statsRow={statsRow}
+            style={{ background: "#fdf8f8" }} // Update main content background
         >
             {loading && <LoadingState count={3} />}
             {error   && <ErrorState message={error} />}
             {!loading && !error && rows.length === 0 && <EmptyState message="No simulations yet. Create your first one above." />}
             {!loading && !error && rows.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {rows.map((r) => (
-                        <SimCard
-                            key={r.case.id}
-                            data={r.case}
-                            stats={r.stats}
-                            onDeleted={(id) => setRows((prev) => prev.filter((x) => x.case.id !== id))}
-                        />
-                    ))}
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                    {['published', 'draft'].map((status) => {
+                        const filteredRows = rows.filter((r) => r.case.status === status);
+                        return (
+                            <div key={status}>
+                                <h2 style={{ fontSize: 16, fontWeight: 600, color: "#b91c1c", marginBottom: 12 }}>
+                                    {status.toUpperCase()} · {filteredRows.length}
+                                </h2>
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns: status === 'published' ? "repeat(3, 1fr)" : "repeat(auto-fill, minmax(300px, 1fr))",
+                                        gap: 16,
+                                    }}
+                                >
+                                    {filteredRows.map((r) => (
+                                        <SimCard
+                                            key={r.case.id}
+                                            data={r.case}
+                                            stats={r.stats}
+                                            onDeleted={(id) => setRows((prev) => prev.filter((x) => x.case.id !== id))}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </DashboardLayout>
@@ -136,123 +190,160 @@ export default function ProfessorDashboard() {
 
 function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStats; onDeleted: (id: string) => void }) {
     const router = useRouter();
-    const [hovered, setHovered]       = useState(false);
+    const [hovered, setHovered] = useState(false);
     const [confirmDelete, setConfirm] = useState(false);
-    const [deleting, setDeleting]     = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const submissionPct = stats.sessions_total > 0
         ? Math.round((stats.sessions_submitted / stats.sessions_total) * 100)
         : 0;
-
-    const statusCfg = data.status === "published"
-        ? { label: "Published", bg: "#e8f5e9", color: "#2e7d32" }
-        : { label: "Draft",     bg: "#f5f5f7", color: "#7a7a7a" };
-    const diffColor: Record<string, string> = {
-        Beginner: "#0066cc", Intermediate: "#7a3f00", Advanced: "#a30000",
+    const diffLabel = difficultyLabel(data.difficulty);
+    const diffBadge: Record<string, { bg: string; color: string }> = {
+        Beginner: { bg: "#dcfce7", color: "#166534" },
+        Intermediate: { bg: "#dbeafe", color: "#1d4ed8" },
+        Advanced: { bg: "#fee2e2", color: "#b91c1c" },
     };
 
-    async function handleDelete() {
-        setDeleting(true);
-        setDeleteError(null);
-        try {
-            await api.cases.delete(data.id);
-            onDeleted(data.id);
-        } catch (err) {
-            setDeleteError(err instanceof Error ? err.message : "Delete failed");
-            setDeleting(false);
-            setConfirm(false);
-        }
+
+    // SVG path for logo based on case title (student dashboard logic)
+    function caseThemeIconPath(title: string): string {
+        const t = (title || "").toLowerCase();
+        if (t.includes("rail") || t.includes("train") || t.includes("amtrak"))
+            return "M4 15V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8M2 15h20M7 15v3M17 15v3M8 9h3M13 9h3M6 5v2M18 5v2";
+        if (t.includes("marriott") || t.includes("hotel") || t.includes("lodg") || t.includes("resort"))
+            return "M3 21h18M3 9l9-6 9 6M4 21V9M20 21V9M9 21v-6h6v6M9 13h2M13 13h2M9 16h2M13 16h2";
+        if (t.includes("arundel") || t.includes("film") || t.includes("cinema") || t.includes("movie") || t.includes("studio"))
+            return "M2 5h20v14H2zM7 5v14M17 5v14M2 9h5M17 9h5M2 15h5M17 15h5M9 8h6v8H9z";
+        if (t.includes("spotify") || t.includes("music") || t.includes("audio") || t.includes("sound") || t.includes("stream"))
+            return "M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
+        // Default: business chart
+        return "M3 21V9l9-6 9 6v12M9 21v-7h6v7M3 13h4M17 13h4M12 3v3";
     }
+
+    const statusCfg = data.status === "published"
+        ? { label: "Published", bg: "#fca5a5", color: "#b91c1c" }
+        : { label: "Draft", bg: "#e5e5e5", color: "#7a7a7a" };
 
     return (
         <div
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "18px 22px", boxShadow: hovered ? "0 4px 16px rgba(0,0,0,0.07)" : "0 1px 3px rgba(0,0,0,0.04)", transition: "box-shadow 0.18s" }}
+            style={{
+                background: "#ffffff",
+                border: hovered ? "1px solid #fca5a5" : "1px solid #e0e0e0",
+                borderRadius: 12,
+                boxShadow: hovered ? "0 4px 16px rgba(252, 165, 165, 0.3)" : "0 1px 3px rgba(0,0,0,0.04)",
+                transition: "box-shadow 0.18s, border 0.18s",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                minHeight: 320,
+            }}
         >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-                <div style={{ flex: 1 }}>
+            <div style={{
+                height: 120,
+                background: "linear-gradient(120deg, #7f1d1d 0%, #b91c1c 60%, #1e3a8a 100%)",
+                position: "relative",
+            }}>
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#fff"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                        position: "absolute",
+                        top: "50%",
+                        right: 16,
+                        transform: "translateY(-50%)",
+                        width: 64,
+                        height: 64,
+                        opacity: 0.18,
+                        zIndex: 1,
+                    }}
+                >
+                    <path d={caseThemeIconPath(data.title ?? "")} />
+                </svg>
+            </div>
+
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "18px 22px", gap: 12 }}>
+                <div>
                     <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                         <Badge label={statusCfg.label} bg={statusCfg.bg} color={statusCfg.color} />
-                        <Badge label={difficultyLabel(data.difficulty)} bg="#f5f5f7" color={diffColor[difficultyLabel(data.difficulty)] ?? "#7a7a7a"} />
+                        <Badge label={diffLabel} {...(diffBadge[diffLabel] ?? { bg: "#f1f5f9", color: "#64748b" })} />
                     </div>
 
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1d1d1f", letterSpacing: "-0.15px", marginBottom: 4 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#1d1d1f", marginBottom: 4 }}>
                         {data.title}
                     </div>
 
-                    {data.teaching_goals.length > 0 && (
-                        <div style={{ fontSize: 12, color: "#7a7a7a", marginBottom: 10 }}>
-                            {data.teaching_goals.join(" · ")}
-                        </div>
-                    )}
-
-                    {data.status === "published" && (
-                        <div style={{ marginBottom: 10 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, color: "#7a7a7a" }}>
-                                    {stats.sessions_submitted}/{stats.sessions_total} students submitted
-                                </span>
-                                <span style={{ fontSize: 11, color: "#7a7a7a" }}>{submissionPct}%</span>
-                            </div>
-                            <div style={{ height: 4, background: "#f0f0f0", borderRadius: 2, overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${submissionPct}%`, background: "#0066cc", borderRadius: 2 }} />
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <Tag>Created {formatDue(data.created_at)}</Tag>
-                        <Tag>{data.case_type}</Tag>
-                        {stats.avg_score !== null && <Tag>Avg Score: {stats.avg_score}/100</Tag>}
-                    </div>
                 </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0, alignItems: "flex-end" }}>
-                    {data.status === "published" && (
-                        <ActionBtn label="View Analytics" primary onClick={() => alert(`Analytics for "${data.title}" coming soon.`)} />
-                    )}
-                    <ActionBtn
-                        label={data.status === "draft" ? "Review Playbook" : "Edit"}
-                        onClick={() => router.push(
-                            data.status === "draft"
-                                ? `/professor/cases/${data.id}/review`
-                                : `/professor/cases/${data.id}/edit`
-                        )}
-                    />
-
-                    {/* Delete button / inline confirm */}
-                    {!confirmDelete ? (
-                        <button
-                            onClick={() => setConfirm(true)}
-                            style={{ fontSize: 11, color: "#9e2a2b", background: "none", border: "1px solid #fecaca", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontFamily: "SF Pro Text, system-ui", fontWeight: 500 }}
-                        >
-                            Delete
-                        </button>
-                    ) : (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <span style={{ fontSize: 11, color: "#9e2a2b", fontWeight: 500 }}>Delete?</span>
-                            <button
-                                onClick={handleDelete}
-                                disabled={deleting}
-                                style={{ fontSize: 11, color: "#fff", background: "#dc2626", border: "none", borderRadius: 6, padding: "4px 10px", cursor: deleting ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", fontWeight: 600 }}
-                            >
-                                {deleting ? "…" : "Yes"}
-                            </button>
-                            <button
-                                onClick={() => setConfirm(false)}
-                                style={{ fontSize: 11, color: "#7a7a7a", background: "#f5f5f7", border: "1px solid #e0e0e0", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "SF Pro Text, system-ui" }}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    )}
-                    {deleteError && (
-                        <span style={{ fontSize: 11, color: "#9e2a2b", maxWidth: 180, textAlign: "right" }}>{deleteError}</span>
-                    )}
+                {/* Action buttons row */}
+                <div style={{ display: "flex", gap: 8, margin: "8px 0 0" }}>
+                    <button
+                        style={{
+                            flex: 1,
+                            padding: "7px 0",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            background: "linear-gradient(90deg, #2563eb, #1e40af)",
+                            color: "#fff",
+                            border: "none",
+                            cursor: "pointer",
+                            fontFamily: "SF Pro Text, system-ui",
+                            transition: "background 0.12s"
+                        }}
+                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
+                    >View Analytics</button>
+                    <button
+                        style={{
+                            flex: 1,
+                            padding: "7px 0",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            background: "#fff",
+                            color: "#2563eb",
+                            border: "1.5px solid #2563eb",
+                            cursor: "pointer",
+                            fontFamily: "SF Pro Text, system-ui",
+                            transition: "background 0.12s"
+                        }}
+                        onClick={() => router.push(`/professor/cases/${data.id}/edit`)}
+                    >Edit</button>
+                    <button
+                        style={{
+                            flex: 1,
+                            padding: "7px 0",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            background: "#fff",
+                            color: "#b91c1c",
+                            border: "1.5px solid #b91c1c",
+                            cursor: "pointer",
+                            fontFamily: "SF Pro Text, system-ui",
+                            transition: "background 0.12s"
+                        }}
+                        onClick={() => setConfirm(true)}
+                    >Delete</button>
+                </div>
+                <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 16, fontWeight: 600, color: "#2563eb" }}>
+                            {stats.sessions_submitted}/{stats.sessions_total} students submitted
+                        </span>
+                        <span style={{ fontSize: 16, fontWeight: 600, color: "#2563eb" }}>{submissionPct}%</span>
+                    </div>
+                    <div style={{ height: 6, background: "#e0e7ef", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${submissionPct}%`, background: "linear-gradient(90deg, #2563eb, #1e40af)" }} />
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
+

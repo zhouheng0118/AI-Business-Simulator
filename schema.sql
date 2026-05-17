@@ -34,7 +34,10 @@ CREATE TABLE playbooks (
   -- [{fact, owner_roles[], access('allowed'|'locked'), unlock_condition, objective_index}]
   checklist_items JSONB DEFAULT '[]',
   -- Investigation checklist generated from teaching_goals
-  -- [{objective_index, task, completion_condition}]
+  -- [{objective_index, task, completion_condition, suggested_roles[]}]
+  calculation_challenges JSONB DEFAULT '[]',
+  -- Calculation challenges generated from teaching_goals
+  -- [{metric, formula_hint, required_data[], owner_roles[], objective_index, expected_insight}]
   questions      JSONB NOT NULL DEFAULT '[]',
   -- [{id, type('decision'|'analysis'|'reflection'), text, rubric_dimensions:[{name,weight}]}]
   review_status  TEXT CHECK (review_status IN ('pending','approved','rejected')) DEFAULT 'pending',
@@ -68,6 +71,8 @@ CREATE TABLE sessions (
   interviewed_roles TEXT[] DEFAULT '{}',
   checklist_completed JSONB DEFAULT '[]',
   -- [0, 2, 3, ...] — indices of completed checklist_items
+  follow_up_history JSONB DEFAULT '{}',
+  -- {"CFO": [{"mode": "calculation_challenge", "target": "break-even rate"}]}
   started_at       TIMESTAMPTZ DEFAULT now(),
   submitted_at     TIMESTAMPTZ
 );

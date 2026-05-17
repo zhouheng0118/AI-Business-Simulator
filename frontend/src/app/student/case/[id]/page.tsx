@@ -22,9 +22,6 @@ const ROLE_COLORS: Record<string, { bg: string; border: string; dot: string }> =
     "CFO":                     { bg: "#edfaf3", border: "#b9efd4", dot: "#1d8a4f" },
     "Operations Director":     { bg: "#fff7ed", border: "#fcd9a8", dot: "#c05c00" },
     "Customer Representative": { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
-    "Customer Rep":            { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
-    "Rider":                   { bg: "#f5f0ff", border: "#d6c4ff", dot: "#6b21a8" },
-    "City Official":           { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490" },
     "Local Expert":            { bg: "#edfafa", border: "#b2e8e8", dot: "#0e7490" },
 };
 
@@ -36,15 +33,10 @@ function roleColor(name: string) {
 const TYPE_LABEL: Record<string, string> = {
     decision: "Decision", analysis: "Analysis", reflection: "Reflection",
 };
-const TYPE_COLOR: Record<string, { bg: string; color: string }> = {
-    decision:   { bg: "#fff3e0", color: "#b75000" },
-    analysis:   { bg: "#eef4ff", color: "#0044a8" },
-    reflection: { bg: "#f0fdf4", color: "#166534" },
-};
-const DIFF_COLOR: Record<string, { bg: string; color: string }> = {
-    easy:   { bg: "#f0fdf4", color: "#166534" },
-    medium: { bg: "#fff7ed", color: "#9a3412" },
-    hard:   { bg: "#fef2f2", color: "#991b1b" },
+const HERO_GRADIENT: Record<string, string> = {
+    easy: "linear-gradient(152deg, #14532d 0%, #166534 28%, #22c55e 62%, #86efac 100%)",
+    medium: "linear-gradient(152deg, #172554 0%, #1e40af 30%, #3b82f6 65%, #93c5fd 100%)",
+    hard: "linear-gradient(152deg, #450a0a 0%, #991b1b 32%, #ef4444 68%, #fca5a5 100%)",
 };
 
 
@@ -77,10 +69,59 @@ function TopBar({ user, onBack }: { user: User; onBack: () => void }) {
     );
 }
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+    title,
+    children,
+    accentColor,
+}: {
+    title: string;
+    children: React.ReactNode;
+    accentColor?: string;
+}) {
+    const isAccent = Boolean(accentColor);
     return (
-        <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#7a7a7a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>{title}</div>
+        <div
+            style={{
+                background: "#ffffff",
+                border: "1px solid #e0e0e0",
+                borderRadius: 12,
+                padding: "20px 24px",
+                marginBottom: 16,
+                borderLeft: isAccent ? `4px solid ${accentColor}` : "1px solid #e0e0e0",
+            }}
+        >
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 12,
+                }}
+            >
+                {isAccent && (
+                    <span
+                        aria-hidden
+                        style={{
+                            width: 3,
+                            height: 16,
+                            borderRadius: 999,
+                            background: accentColor,
+                            flexShrink: 0,
+                        }}
+                    />
+                )}
+                <div
+                    style={{
+                        fontSize: isAccent ? 13 : 11,
+                        fontWeight: 700,
+                        color: isAccent ? "#1d4ed8" : "#7a7a7a",
+                        letterSpacing: isAccent ? "0.01em" : "0.06em",
+                        textTransform: isAccent ? "none" : "uppercase",
+                    }}
+                >
+                    {title}
+                </div>
+            </div>
             {children}
         </div>
     );
@@ -88,22 +129,57 @@ function SectionCard({ title, children }: { title: string; children: React.React
 
 function RoleCard({ role }: { role: ApiPlaybookRole }) {
     const c = roleColor(role.name);
+    const [hovered, setHovered] = useState(false);
+    const initial = role.name.trim().charAt(0).toUpperCase();
     return (
-        <div style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            style={{
+                background: c.bg,
+                border: `1px solid ${hovered ? c.dot : c.border}`,
+                borderRadius: 10,
+                padding: "14px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                transform: hovered ? "translateY(-2px)" : "translateY(0)",
+                boxShadow: hovered ? `0 8px 20px -12px ${c.dot}66` : "0 1px 2px rgba(15,23,42,0.06)",
+                transition: "border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease",
+            }}
+        >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
+                <div
+                    aria-hidden
+                    style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        background: c.dot,
+                        color: "#ffffff",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                    }}
+                >
+                    {initial}
+                </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f" }}>{role.name}</span>
             </div>
-            <div style={{ fontSize: 11, color: "#7a7a7a" }}>{role.title}</div>
-            <div style={{ fontSize: 12, color: "#3d3d3f", lineHeight: 1.4, marginTop: 2 }}>{role.focus_area}</div>
+            <div style={{ fontSize: 10, color: "#94a3b8" }}>{role.title}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#334155", lineHeight: 1.45, marginTop: 2 }}>{role.focus_area}</div>
         </div>
     );
 }
 
-function StartButton({ session, loading, onClick }: {
+function StartButton({ session, loading, onClick, wide = false }: {
     session: ApiSession | null;
     loading: boolean;
     onClick: () => void;
+    wide?: boolean;
 }) {
     const [hovered, setHovered] = useState(false);
 
@@ -117,7 +193,32 @@ function StartButton({ session, loading, onClick }: {
             disabled={loading}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 24px", borderRadius: 10, border: "none", background: loading ? "#b0c8f0" : hovered ? "#0071e3" : "#0066cc", color: "#ffffff", fontSize: 14, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", fontFamily: "SF Pro Text, system-ui", transition: "background 0.15s", letterSpacing: "-0.1px" }}
+            style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: wide ? "13px 26px" : "11px 24px",
+                minWidth: wide ? 300 : undefined,
+                width: wide ? "min(100%, 420px)" : undefined,
+                borderRadius: 12,
+                border: "none",
+                background: loading
+                    ? "#b0c8f0"
+                    : "linear-gradient(132deg, #172554 0%, #1e40af 34%, #2563eb 70%, #4f46e5 100%)",
+                color: "#ffffff",
+                fontSize: wide ? 15 : 14,
+                fontWeight: 700,
+                cursor: loading ? "not-allowed" : "pointer",
+                fontFamily: "SF Pro Text, system-ui",
+                transition: "transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease",
+                letterSpacing: "-0.1px",
+                transform: hovered && !loading ? "translateY(-1px)" : "translateY(0)",
+                filter: hovered && !loading ? "brightness(1.06)" : "none",
+                boxShadow: hovered && !loading
+                    ? "0 10px 26px -12px rgba(37,99,235,0.65)"
+                    : "0 4px 14px -8px rgba(30,64,175,0.55)",
+            }}
         >
             {loading ? "Starting…" : label}
             {!loading && (
@@ -125,6 +226,27 @@ function StartButton({ session, loading, onClick }: {
             )}
         </button>
     );
+}
+
+const OBJECTIVE_HIGHLIGHT_RE = /(\$\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:m|million|b|billion|k|thousand))?|\d+\s?(?:million|billion|thousand|m|b|k)|recommend|decide|choose|prioritize|invest|approve|reject|defer|adopt|pivot)/gi;
+
+function emphasizeObjectiveText(text: string): React.ReactNode[] {
+    const nodes: React.ReactNode[] = [];
+    let cursor = 0;
+
+    for (const match of text.matchAll(OBJECTIVE_HIGHLIGHT_RE)) {
+        if (match.index === undefined) continue;
+        if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+        nodes.push(
+            <strong key={`objective-highlight-${match.index}`} style={{ fontWeight: 700, color: "#1e3a8a" }}>
+                {match[0]}
+            </strong>
+        );
+        cursor = match.index + match[0].length;
+    }
+
+    if (cursor < text.length) nodes.push(text.slice(cursor));
+    return nodes;
 }
 
 
@@ -191,14 +313,18 @@ export default function CaseDetailPage() {
     const roles: ApiPlaybookRole[] =
         detail?.playbook?.roles?.length ? detail.playbook.roles : DEFAULT_ROLES;
 
-    const typeStyle  = c ? (TYPE_COLOR[c.case_type]  ?? { bg: "#f5f5f7", color: "#7a7a7a" }) : null;
-    const diffStyle  = c ? (DIFF_COLOR[c.difficulty] ?? { bg: "#f5f5f7", color: "#7a7a7a" }) : null;
+    const heroGradient = c ? (HERO_GRADIENT[c.difficulty] ?? HERO_GRADIENT.medium) : HERO_GRADIENT.medium;
+    const descriptionText = c?.description?.trim() || "No description available for this case.";
+    const descriptionParagraphs = descriptionText
+        .split(/\n\s*\n/)
+        .map((part) => part.trim())
+        .filter(Boolean);
 
     return (
         <div style={{ minHeight: "100vh", background: "#f5f5f7", fontFamily: "SF Pro Text, system-ui" }}>
             {user && <TopBar user={user} onBack={() => router.push("/dashboard/student")} />}
 
-            <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px 48px" }}>
+            <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px 132px" }}>
 
                 {/* Loading skeleton */}
                 {loading && (
@@ -218,55 +344,130 @@ export default function CaseDetailPage() {
 
                 {!loading && !error && c && (
                     <>
-                        <div style={{ marginBottom: 20 }}>
-                            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                                {typeStyle && (
-                                    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: typeStyle.bg, color: typeStyle.color, letterSpacing: "0.02em" }}>
-                                        {TYPE_LABEL[c.case_type] ?? c.case_type}
-                                    </span>
-                                )}
-                                {diffStyle && (
-                                    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: diffStyle.bg, color: diffStyle.color, letterSpacing: "0.02em" }}>
-                                        {difficultyLabel(c.difficulty)}
-                                    </span>
-                                )}
+                        <div
+                            style={{
+                                marginBottom: 20,
+                                borderRadius: 16,
+                                overflow: "hidden",
+                                position: "relative",
+                                background: heroGradient,
+                                padding: "24px 24px 20px",
+                            }}
+                        >
+                            <div
+                                aria-hidden
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    background: "linear-gradient(180deg, rgba(15,23,42,0.02) 0%, rgba(15,23,42,0.24) 100%)",
+                                }}
+                            />
+                            <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        padding: "4px 10px",
+                                        borderRadius: 999,
+                                        background: "rgba(255,255,255,0.08)",
+                                        border: "1px solid rgba(255,255,255,0.42)",
+                                        color: "rgba(255,255,255,0.96)",
+                                        letterSpacing: "0.03em",
+                                    }}
+                                >
+                                    {TYPE_LABEL[c.case_type] ?? c.case_type}
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        padding: "4px 10px",
+                                        borderRadius: 999,
+                                        background: "rgba(255,255,255,0.08)",
+                                        border: "1px solid rgba(255,255,255,0.42)",
+                                        color: "rgba(255,255,255,0.96)",
+                                        letterSpacing: "0.03em",
+                                    }}
+                                >
+                                    {difficultyLabel(c.difficulty)}
+                                </span>
                                 {assignment?.due_at && (
-                                    <span style={{ fontSize: 11, color: "#7a7a7a", border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "3px 10px" }}>
+                                    <span
+                                        style={{
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            color: "rgba(255,255,255,0.86)",
+                                            border: "1px solid rgba(255,255,255,0.28)",
+                                            borderRadius: 999,
+                                            padding: "4px 10px",
+                                        }}
+                                    >
                                         Due {formatDue(assignment.due_at)}
                                     </span>
                                 )}
                             </div>
-                            <h1 style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 26, fontWeight: 700, color: "#1d1d1f", margin: "0 0 4px", letterSpacing: "-0.5px", lineHeight: 1.25 }}>
+                            <h1
+                                style={{
+                                    position: "relative",
+                                    zIndex: 1,
+                                    fontFamily: "SF Pro Display, system-ui",
+                                    fontSize: "clamp(30px, 4vw, 36px)",
+                                    fontWeight: 800,
+                                    color: "#f8fbff",
+                                    margin: 0,
+                                    letterSpacing: "-0.7px",
+                                    lineHeight: 1.15,
+                                    textShadow: "0 2px 16px rgba(15,23,42,0.24)",
+                                }}
+                            >
                                 {c.title}
                             </h1>
                         </div>
 
-                        <SectionCard title="Case Background">
-                            <p style={{ fontSize: 14, color: "#3d3d3f", lineHeight: 1.65, margin: 0 }}>
-                                {c.description ?? "No description available for this case."}
-                            </p>
+                        <SectionCard title="Case Background" accentColor="#3b82f6">
+                            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                                {descriptionParagraphs.map((paragraph, index) => (
+                                    <p
+                                        key={`case-background-p-${index}`}
+                                        style={{
+                                            fontSize: 15,
+                                            color: "#334155",
+                                            lineHeight: 1.8,
+                                            margin: 0,
+                                        }}
+                                    >
+                                        {paragraph}
+                                    </p>
+                                ))}
+                            </div>
                         </SectionCard>
 
+                        {c.teaching_goals.length > 0 && (
+                            <SectionCard title="Learning objectives">
+                                <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+                                    {c.teaching_goals.map((goal, idx) => (
+                                        <li
+                                            key={idx}
+                                            style={{ fontSize: 14, color: "#3d3d3f", lineHeight: 1.65, paddingLeft: 4 }}
+                                        >
+                                            {goal}
+                                        </li>
+                                    ))}
+                                </ol>
+                            </SectionCard>
+                        )}
+
                         {detail?.playbook?.questions?.[0]?.text && (
-                            <div style={{ background: "#fffbea", border: "1px solid #f0d060", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b75000" strokeWidth="2" strokeLinecap="round">
+                            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round">
                                         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                                     </svg>
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: "#7a4f00", letterSpacing: "0.06em", textTransform: "uppercase" }}>Your Objective</span>
+                                    <span style={{ fontSize: 13, fontWeight: 800, color: "#1e3a8a", letterSpacing: "0.08em", textTransform: "uppercase" }}>Your Objective</span>
                                 </div>
-                                <p style={{ fontSize: 14, fontWeight: 500, color: "#3d2000", lineHeight: 1.65, margin: "0 0 12px" }}>
-                                    {detail.playbook.questions[0].text}
+                                <p style={{ fontSize: 15, fontWeight: 500, color: "#1e3a8a", lineHeight: 1.75, margin: 0 }}>
+                                    {emphasizeObjectiveText(detail.playbook.questions[0].text)}
                                 </p>
-                                {c.teaching_goals.length > 0 && (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                        {c.teaching_goals.map((goal) => (
-                                            <span key={goal} style={{ fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: "#fff3cd", color: "#7a4f00", border: "1px solid #f0d060" }}>
-                                                {goal}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         )}
 
@@ -288,22 +489,52 @@ export default function CaseDetailPage() {
                                     { step: "1", text: "Interview stakeholders to collect information and build your evidence board." },
                                     { step: "2", text: "Once you have gathered enough evidence, proceed to the answer submission." },
                                     { step: "3", text: "Submit your analysis and receive a detailed debrief report with scoring." },
-                                ].map(({ step, text }) => (
+                                ].map(({ step, text }, idx, arr) => (
                                     <div key={step} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#0066cc", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{step}</div>
+                                        <div style={{ width: 22, flexShrink: 0, display: "flex", justifyContent: "center", position: "relative" }}>
+                                            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1, zIndex: 1 }}>{step}</div>
+                                            {idx < arr.length - 1 && (
+                                                <span
+                                                    aria-hidden
+                                                    style={{
+                                                        position: "absolute",
+                                                        top: 24,
+                                                        bottom: -12,
+                                                        borderLeft: "1px dashed #93c5fd",
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
                                         <p style={{ fontSize: 13, color: "#3d3d3f", margin: 0, lineHeight: 1.5 }}>{text}</p>
                                     </div>
                                 ))}
                             </div>
                         </SectionCard>
-
-                        {/* CTA */}
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                            <StartButton session={session} loading={starting} onClick={handleStart} />
-                        </div>
                     </>
                 )}
             </div>
+
+            {!loading && !error && c && (
+                <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, pointerEvents: "none" }}>
+                    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 24px 18px" }}>
+                        <div
+                            style={{
+                                background: "rgba(248,250,252,0.92)",
+                                border: "1px solid #dbeafe",
+                                borderRadius: 14,
+                                padding: "10px 12px",
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                boxShadow: "0 8px 30px -18px rgba(30,64,175,0.45)",
+                                backdropFilter: "blur(8px)",
+                                pointerEvents: "auto",
+                            }}
+                        >
+                            <StartButton session={session} loading={starting} onClick={handleStart} wide />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

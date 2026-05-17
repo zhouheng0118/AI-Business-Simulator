@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -46,12 +46,8 @@ const DEFAULT_QUESTIONS: Record<string, ApiQuestion> = {
 const CATEGORY_MAP: Record<string, { label: string; bg: string; color: string }> = {
     CEO:                     { label: "Strategic", bg: "#eef4ff", color: "#0044a8" },
     CFO:                     { label: "Financial", bg: "#edfaf3", color: "#166534" },
-    "Head of Operations":    { label: "Operational", bg: "#fff7ed", color: "#9a3412" },
     "Operations Director":   { label: "Operational", bg: "#fff7ed", color: "#9a3412" },
-    "Customer Rep":          { label: "Market", bg: "#f5f0ff", color: "#6b21a8" },
     "Customer Representative": { label: "Market", bg: "#f5f0ff", color: "#6b21a8" },
-    Rider:                   { label: "Market", bg: "#f5f0ff", color: "#6b21a8" },
-    "City Official":         { label: "Regulatory", bg: "#edfafa", color: "#0e7490" },
     "Local Expert":          { label: "Regulatory", bg: "#edfafa", color: "#0e7490" },
 };
 
@@ -61,13 +57,6 @@ function evidenceCategory(source: string) {
 
 function wordCount(text: string) {
     return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
-function getQuestions(d: ApiCaseDetail): ApiQuestion[] {
-    const qs = d.playbook?.questions;
-    if (qs && qs.length > 0) return qs;
-    const caseType = d.case?.case_type ?? "decision";
-    return [DEFAULT_QUESTIONS[caseType] ?? DEFAULT_QUESTIONS.decision];
 }
 
 
@@ -195,7 +184,7 @@ function QuestionCard({
                     {wc} words {tooShort ? `(aim for ${minWords}+)` : "✓"}
                 </span>
                 <span style={{ fontSize: 11, color: "#7a7a7a" }}>
-                    Tip: cite specific data points (e.g. &quot;$2.5M cost&quot;, &quot;3-month runway&quot;)
+                    Tip: cite specific data points (e.g. "$2.5M cost", "3-month runway")
                 </span>
             </div>
         </div>
@@ -208,7 +197,7 @@ export default function AnswerPage() {
     const params = useParams();
     const sessionId = params.id as string;
 
-    const [, setSession]          = useState<ApiSession | null>(null);
+    const [session, setSession]   = useState<ApiSession | null>(null);
     const [detail, setDetail]     = useState<ApiCaseDetail | null>(null);
     const [evidence, setEvidence] = useState<ApiEvidence[]>([]);
     const [answers, setAnswers]   = useState<Record<string, string>>({});
@@ -251,7 +240,14 @@ export default function AnswerPage() {
             .finally(() => setLoading(false));
     }, [sessionId, router]);
 
-    const questions = useMemo(() => detail ? getQuestions(detail) : [], [detail]);
+    function getQuestions(d: ApiCaseDetail): ApiQuestion[] {
+        const qs = d.playbook?.questions;
+        if (qs && qs.length > 0) return qs;
+        const caseType = d.case?.case_type ?? "decision";
+        return [DEFAULT_QUESTIONS[caseType] ?? DEFAULT_QUESTIONS.decision];
+    }
+
+    const questions = detail ? getQuestions(detail) : [];
 
     const canSubmit = questions.length > 0 && questions.every((q) => wordCount(answers[q.id] ?? "") >= 30);
 

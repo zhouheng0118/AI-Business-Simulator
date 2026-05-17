@@ -17,7 +17,7 @@ from agents.role_types import (
     role_type_matches,
 )
 from agents.sub_agents import call_sub_agent, stream_sub_agent
-from llm_client import FALLBACK_REPLY, complete
+from llm_client import FALLBACK_REPLY, chat, complete
 
 _MIN_ROLES = 3
 _MIN_EVIDENCE = 3
@@ -397,6 +397,291 @@ def _role_label_matches(role: dict, target_role: str) -> bool:
     return bool(target and target in candidates)
 
 
+_GUIDE_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
+    "have", "in", "is", "it", "of", "on", "or", "the", "this", "to", "with",
+    "that", "was", "were", "its", "their", "they", "will", "would", "could",
+    "should", "not", "but", "our", "we", "which", "about", "how", "why",
+    "what", "when", "who", "if",
+}
+
+
+def _word_set(text: str) -> set[str]:
+    return {w for w in re.findall(r"\w+", text.lower()) if w not in _GUIDE_STOPWORDS and len(w) > 2}
+
+
+def _follow_up_already_used(session: dict, role_name: str, mode: str, target: str) -> bool:
+    """Return whether a (mode, target) pair was already issued for this role."""
+    history = (session.get("follow_up_history") or {}).get(role_name, [])
+    return any(e["mode"] == mode and e["target"] == target for e in history)
+
+
+def _get_last_follow_up(session: dict, role_name: str) -> dict | None:
+    """Return the most recently issued follow-up entry for this role."""
+    history = (session.get("follow_up_history") or {}).get(role_name, [])
+    return history[-1] if history else None
+
+
+def _atom_domain_paraphrase(atom: dict) -> str:
+    """Derive a safe domain hint from an atom's unlock condition without quoting the fact."""
+    unlock = atom.get("unlock_condition", "").strip()
+    # Strip leading "Student asks/must/needs" boilerplate
+    cleaned = re.sub(
+        r"^student\s+(?:asks?|must|needs?\s+to|demonstrates?|shows?|provides?|questions?)\s*(?:specifically\s*)?(?:about\s*)?",
+        "",
+        unlock,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Strip leading connector words
+    cleaned = re.sub(r"^(?:about|whether|if|the|that|how|why|what)\s+", "", cleaned, flags=re.IGNORECASE)
+    # Truncate at cross-agent prerequisites (", AND must have already interviewed...")
+    cleaned = re.split(r"[,;]\s*(?:AND\s+)?must\s+have", cleaned, flags=re.IGNORECASE)[0].strip()
+    return cleaned or "a deeper dimension of this topic"
+
+
+def _already_unlocked(atom: dict, evidence_board: list) -> bool:
+    """Return whether an atom's content appears on the visible evidence board."""
+    fact_words = {w for w in re.findall(r"\w+", atom.get("fact", "").lower()) if len(w) > 3}
+    if not fact_words:
+        return False
+    for item in evidence_board:
+        if not item.get("visible", False):
+            continue
+        item_text = f"{item.get('key_info', '')} {item.get('data', '')}"
+        item_words = {w for w in re.findall(r"\w+", item_text.lower()) if len(w) > 3}
+        if item_words and len(fact_words & item_words) / max(len(fact_words), 1) >= 0.50:
+            return True
+    return False
+
+
+def _challenge_owned_by_role(challenge: dict, role: dict) -> bool:
+    """Return whether a calculation challenge belongs to this role."""
+    owners = {_canonical_role_label(str(o)) for o in (challenge.get("owner_roles") or [])}
+    role_labels = {
+        _canonical_role_label(str(role.get("name", ""))),
+        _canonical_role_label(str(role.get("title", ""))),
+        _canonical_role_label(str(role.get("role_type", ""))),
+    }
+    return bool(role_labels & owners)
+
+
+def _required_data_on_board(required_data: list, evidence_board: list, role_name: str) -> bool:
+    """Return True when every required_data label has a fuzzy match on the board."""
+    role_evidence = [item for item in evidence_board if item.get("source") == role_name]
+    for label in required_data:
+        label_words = _word_set(label)
+        if not label_words:
+            continue
+        found = any(
+            len(label_words & _word_set(f"{e.get('key_info', '')} {e.get('data', '')}"))
+            / max(len(label_words), 1) >= 0.40
+            for e in role_evidence
+        )
+        if not found:
+            return False
+    return True
+
+
+def _checklist_item_for_role(item: dict, role: dict) -> bool:
+    """Return True if this item is owned by this role or has no role assignment."""
+    suggested = item.get("suggested_roles") or []
+    if not suggested:
+        return True
+    role_labels = {
+        (role.get("name") or "").lower(),
+        (role.get("role_type") or "").lower(),
+    }
+    return any(s.lower() in role_labels for s in suggested)
+
+
+def _stage_description(role_history: list) -> str:
+    count = len(role_history)
+    if count == 0:
+        return "Opening turn — no prior exchanges"
+    if count == 1:
+        return "Early conversation — 1 exchange so far"
+    if count <= 4:
+        return f"Mid-conversation — {count} exchange(s) so far"
+    return f"Deep conversation — {count} exchanges so far"
+
+
+def _select_guide_strategy(
+    role: dict,
+    session: dict,
+    playbook: dict,
+    role_history: list,
+    current_student_message: str,
+) -> dict:
+    """Select the highest-priority follow-up mode for the current turn.
+
+    Returns a GuideContext dict with mode and all data needed for the prompt block.
+    role_history is the subset of messages for this role's conversation thread.
+    """
+    role_name = role.get("name", "")
+    info_atoms: list = playbook.get("info_atoms") or []
+    checklist_items: list = playbook.get("checklist_items") or []
+    calculation_challenges: list = playbook.get("calculation_challenges") or []
+    evidence_board: list = session.get("evidence_board") or []
+    completed_set = set(session.get("checklist_completed") or [])
+    stage = _stage_description(role_history)
+
+    # Priority 1: Validation
+    # Use follow_up_history to check if last issued follow-up was a calculation_challenge.
+    last_followup = _get_last_follow_up(session, role_name)
+    if (
+        last_followup
+        and last_followup["mode"] == "calculation_challenge"
+        and re.search(r"\d|%|\$", current_student_message)
+    ):
+        last_metric = last_followup["target"]
+        challenge = next(
+            (c for c in calculation_challenges if c.get("metric") == last_metric),
+            None,
+        )
+        available_data = [
+            item["key_info"]
+            for item in evidence_board
+            if item.get("source") == role_name
+        ]
+        return {
+            "mode": "validation",
+            "target_description": last_metric,
+            "available_data": available_data,
+            "formula_hint": (challenge or {}).get("formula_hint", ""),
+            "expected_insight": (challenge or {}).get("expected_insight", ""),
+            "target_roles": [],
+            "uncompleted_checklist_hints": [],
+            "stage_description": stage,
+            "priority_rationale": "Last follow-up was calculation_challenge; student provided numerical result",
+        }
+
+    # Priority 2: Unlock probe
+    unlockable = [
+        a for a in info_atoms
+        if _info_atom_owned_by_role(a, role)
+        and a.get("access") == "locked"
+        and _level_gate_passed(a, session)
+        and not _already_unlocked(a, evidence_board)
+        and not _follow_up_already_used(session, role_name, "unlock_probe", _atom_domain_paraphrase(a))
+    ]
+    if unlockable:
+        # Prefer lowest level first
+        unlockable.sort(key=lambda a: a.get("level", 1))
+        atom = unlockable[0]
+        domain = _atom_domain_paraphrase(atom)
+        return {
+            "mode": "unlock_probe",
+            "target_description": domain,
+            "available_data": [],
+            "formula_hint": "",
+            "expected_insight": "",
+            "target_roles": [],
+            "uncompleted_checklist_hints": [],
+            "stage_description": stage,
+            "priority_rationale": f"Unlockable atom at level {atom.get('level', 1)}; level gate passed",
+        }
+
+    # Priority 3: Calculation challenge
+    available_challenges = [
+        c for c in calculation_challenges
+        if _challenge_owned_by_role(c, role)
+        and _required_data_on_board(c.get("required_data", []), evidence_board, role_name)
+        and not _follow_up_already_used(session, role_name, "calculation_challenge", c["metric"])
+    ]
+    if available_challenges:
+        challenge = available_challenges[0]
+        available_data = [
+            item["key_info"]
+            for item in evidence_board
+            if item.get("source") == role_name
+        ]
+        return {
+            "mode": "calculation_challenge",
+            "target_description": challenge["metric"],
+            "available_data": available_data,
+            "formula_hint": challenge.get("formula_hint", ""),
+            "expected_insight": challenge.get("expected_insight", ""),
+            "target_roles": [],
+            "uncompleted_checklist_hints": [],
+            "stage_description": stage,
+            "priority_rationale": "Required data on board; challenge not yet issued",
+        }
+
+    # Priority 4: Checklist probe
+    uncompleted = [
+        item for i, item in enumerate(checklist_items)
+        if i not in completed_set
+        and _checklist_item_for_role(item, role)
+        and not _follow_up_already_used(session, role_name, "checklist_probe", item["task"])
+    ]
+    if uncompleted:
+        hints = [item["task"] for item in uncompleted[:3]]
+        return {
+            "mode": "checklist_probe",
+            "target_description": hints[0],
+            "available_data": [],
+            "formula_hint": "",
+            "expected_insight": "",
+            "target_roles": [],
+            "uncompleted_checklist_hints": hints,
+            "stage_description": stage,
+            "priority_rationale": f"{len(uncompleted)} uncompleted checklist item(s) for this role",
+        }
+
+    # Priority 5: Cross-role referral
+    # Compare overlap against the CANDIDATE role's domain, not the current role.
+    uncompleted_all = [
+        item for i, item in enumerate(checklist_items)
+        if i not in completed_set
+    ]
+    msg_words = _word_set(current_student_message)
+    referral_candidates: list[tuple[dict, dict]] = []
+    seen_candidates: set[str] = set()
+    for item in uncompleted_all:
+        for suggested_name in item.get("suggested_roles", []):
+            candidate = _find_role(playbook.get("roles", []), suggested_name)
+            if not candidate or candidate["name"] == role_name:
+                continue
+            if candidate["name"] in seen_candidates:
+                continue
+            task_words = _word_set(item.get("task", ""))
+            candidate_focus_words = _word_set(candidate.get("focus_area", ""))
+            all_relevant = task_words
+            if all_relevant:
+                msg_overlap = len(task_words & msg_words) / len(all_relevant)
+                focus_overlap = len(task_words & candidate_focus_words) / len(all_relevant)
+                if msg_overlap >= 0.30 or focus_overlap >= 0.30:
+                    referral_candidates.append((candidate, item))
+                    seen_candidates.add(candidate["name"])
+
+    if referral_candidates:
+        target_names = [c["name"] for c, _ in referral_candidates[:2]]
+        return {
+            "mode": "cross_role_referral",
+            "target_description": ", ".join(target_names),
+            "available_data": [],
+            "formula_hint": "",
+            "expected_insight": "",
+            "target_roles": target_names,
+            "uncompleted_checklist_hints": [],
+            "stage_description": stage,
+            "priority_rationale": "Structured suggested_roles points to other agents with relevant domain",
+        }
+
+    # Priority 6: Deepen (fallback)
+    return {
+        "mode": "deepen",
+        "target_description": "",
+        "available_data": [],
+        "formula_hint": "",
+        "expected_insight": "",
+        "target_roles": [],
+        "uncompleted_checklist_hints": [],
+        "stage_description": stage,
+        "priority_rationale": "No higher-priority trigger found",
+    }
+
+
 def _info_atom_owned_by_role(atom: dict, role: dict) -> bool:
     """Return whether an info atom belongs to this role by name or role_type."""
     owners = atom.get("owner_roles") or []
@@ -410,6 +695,222 @@ def _info_atom_owned_by_role(atom: dict, role: dict) -> bool:
 
     owner_labels = {_canonical_role_label(str(owner)) for owner in owners}
     return bool(role_labels & owner_labels)
+
+
+# ── Mission-based CEO orchestration ─────────────────────────────────────────
+
+_REPORT_PHRASES = {
+    "i found", "they told me", "according to", "he said", "she said",
+    "the director said", "the cfo said", "the operations", "the customer",
+    "i learned", "i was told", "it turns out", "the agent said",
+    "they mentioned", "i discovered", "turns out", "from the",
+}
+
+
+def _is_ceo_role(role_name: str) -> bool:
+    return canonical_role_type(role_name) == "strategy"
+
+
+def _is_student_reporting(message: str) -> bool:
+    if len(message.split()) >= 40:
+        return True
+    lower = message.lower()
+    return any(phrase in lower for phrase in _REPORT_PHRASES)
+
+
+def _parse_mission_verdict(text: str) -> str | None:
+    match = re.search(
+        r"<mission_verdict>(COMPLETE|INCOMPLETE)</mission_verdict>",
+        text,
+        re.IGNORECASE,
+    )
+    return match.group(1).upper() if match else None
+
+
+def _strip_mission_verdict(text: str) -> str:
+    return re.sub(
+        r"\s*<mission_verdict>.*?</mission_verdict>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
+
+
+def _agent_is_active(role_name: str, active_agents: list) -> bool:
+    role_type = canonical_role_type(role_name)
+    role_lower = role_name.lower().strip()
+    for agent in active_agents:
+        if agent.lower().strip() == role_lower:
+            return True
+        agent_type = canonical_role_type(agent)
+        if role_type and agent_type and role_type == agent_type:
+            return True
+    return False
+
+
+def _build_ceo_orchestrator_prompt(
+    mode: str,
+    mission: dict,
+    next_mission: dict | None,
+    ceo_role: dict | None,
+    mission_state: dict,
+) -> str:
+    from agents.missions import MISSIONS
+
+    name = (ceo_role or {}).get("name", "CEO")
+    title = (ceo_role or {}).get("title", "Chief Executive Officer")
+    focus_areas_str = "\n".join(f"  - {f}" for f in mission["focus_areas"])
+    active_agents_str = ", ".join(mission["active_agents"])
+    next_briefing = (
+        next_mission["briefing_instruction"]
+        if next_mission
+        else (
+            "All 5 missions are complete. Congratulate the student briefly "
+            "and tell them they are ready to proceed to the answer."
+        )
+    )
+
+    if mode == "BRIEFING":
+        mode_block = (
+            f"You are giving the Mission {mission['index'] + 1} of 5 briefing.\n\n"
+            f"Format your response EXACTLY like this (use real newlines, no markdown symbols):\n\n"
+            f"Mission {mission['index'] + 1} of 5: {mission['title']}\n\n"
+            f"[1-2 sentences of strategic context — why this mission matters right now]\n\n"
+            f"Speak with: {active_agents_str}\n\n"
+            f"Your assignment:\n"
+            f"{mission['briefing_instruction']}\n\n"
+            f"Come back and tell me what you found.\n\n"
+            f"---\n"
+            f"Rules: Do NOT list other missions. Do NOT use bullet points or markdown. "
+            f"The 'Speak with:' line must appear verbatim. Reveal only this mission. Tone: direct and executive."
+        )
+
+    elif mode == "EVALUATING":
+        mode_block = (
+            f"You are evaluating whether Mission {mission['index'] + 1} of 5 is complete.\n"
+            f"Mission: {mission['title']}\n"
+            f"Completion criteria: {mission['completion_criteria']}\n"
+            f"Assigned agent(s) the student visited: {active_agents_str}\n\n"
+            "The student just reported back. Use their message and the recent conversation history "
+            "with the sub-agents to evaluate their report against the criteria above.\n\n"
+            "If the report satisfies the criteria (COMPLETE):\n"
+            "  - Confirm what they got right in 1-2 sentences.\n"
+            "  - Optionally note one thing they could probe deeper (skip if not needed).\n"
+            f"  - Introduce the next assignment: {next_briefing}\n"
+            "  - End your response with: <mission_verdict>COMPLETE</mission_verdict>\n\n"
+            "If the report does NOT satisfy the criteria (INCOMPLETE):\n"
+            "  - Name exactly what is missing (the specific fact or concept).\n"
+            "  - Redirect: tell them which agent to go back to and what to ask.\n"
+            "  - End your response with: <mission_verdict>INCOMPLETE</mission_verdict>\n\n"
+            "Rules: do not reveal what the student should have found. "
+            "Tone: direct mentor. 3-5 sentences total. Do not ask a question."
+        )
+
+    else:  # REDIRECTING
+        mode_block = (
+            f"The student is currently on Mission {mission['index'] + 1}: {mission['title']}.\n"
+            f"They should be speaking with: {active_agents_str}.\n\n"
+            "Briefly remind them of what they need to collect (1-2 sentences). "
+            "Tell them to come back once they have it. "
+            "Maximum 2 sentences. Do not ask a question."
+        )
+
+    return (
+        f"You are {name}, {title}, coordinating a student investigation of this business case.\n\n"
+        f"{mode_block}\n\n"
+        "Core rules:\n"
+        "- Use direct, executive language. No pleasantries.\n"
+        "- Never ask the student a question — your role is to direct and evaluate.\n"
+        f"- Stay in character as {name}."
+    )
+
+
+async def handle_ceo_message(
+    session_id: str,
+    session: dict,
+    playbook: dict,
+    history: list,
+    student_message: str,
+) -> dict:
+    from agents.missions import MISSIONS
+
+    mission_state = dict(session.get("mission_state") or {})
+    current_idx = int(mission_state.get("current_mission", 0))
+    phase = mission_state.get("phase", "briefing")
+
+    # Determine CEO mode for this turn
+    if phase == "briefing":
+        mode = "BRIEFING"
+    elif phase == "investigating":
+        mode = "EVALUATING" if _is_student_reporting(student_message) else "REDIRECTING"
+    else:  # complete or unknown
+        mode = "REDIRECTING"
+
+    current_mission = MISSIONS[min(current_idx, len(MISSIONS) - 1)]
+    next_mission = MISSIONS[current_idx + 1] if current_idx + 1 < len(MISSIONS) else None
+
+    ceo_role = _find_role(playbook.get("roles") or [], "CEO")
+    ceo_name = (ceo_role or {}).get("name", "CEO")
+
+    system_prompt = _build_ceo_orchestrator_prompt(
+        mode, current_mission, next_mission, ceo_role, mission_state
+    )
+
+    raw_reply = await chat(
+        system_prompt,
+        student_message,
+        history=history[-12:],
+        max_tokens=600,
+        temperature=0.7,
+    )
+
+    verdict = _parse_mission_verdict(raw_reply)
+    reply = _strip_mission_verdict(raw_reply)
+
+    # Update mission state based on outcome
+    new_mission_state = dict(mission_state)
+
+    if mode == "BRIEFING":
+        new_mission_state["phase"] = "investigating"
+        new_mission_state["active_agents"] = ["CEO"] + list(current_mission["active_agents"])
+
+    elif mode == "EVALUATING" and verdict == "COMPLETE":
+        completed = list(mission_state.get("missions_completed") or [])
+        if current_idx not in completed:
+            completed.append(current_idx)
+        next_idx = current_idx + 1
+        new_mission_state["missions_completed"] = completed
+        if next_idx >= len(MISSIONS):
+            new_mission_state["phase"] = "complete"
+            new_mission_state["active_agents"] = ["CEO"]
+        else:
+            new_mission_state["current_mission"] = next_idx
+            new_mission_state["phase"] = "briefing"
+            new_mission_state["active_agents"] = ["CEO"]
+
+    if new_mission_state != mission_state:
+        db.update_mission_state(session_id, new_mission_state)
+
+    db.save_message(session_id, "student", student_message, ceo_name)
+    db.save_message(session_id, "agent", reply, ceo_name)
+    db.add_interviewed_role(session_id, ceo_name)
+
+    current_roles = list(session.get("interviewed_roles") or [])
+    if ceo_name not in current_roles:
+        current_roles = current_roles + [ceo_name]
+
+    return {
+        "reply": reply,
+        "new_evidence": [],
+        "agent_name": ceo_name,
+        "info_sufficient": new_mission_state.get("phase") == "complete",
+        "roles_visited": current_roles,
+        "newly_unlocked": False,
+        "newly_checked_items": [],
+        "checklist_completed": list(session.get("checklist_completed") or []),
+        "unlock_check_ms": 0,
+        "mission_state": new_mission_state,
+    }
 
 
 async def handle_student_message(
@@ -457,7 +958,19 @@ async def handle_student_message(
     )
     unlock_check_ms = int((time.monotonic() - t0) * 1000)
 
-    reply = await call_sub_agent(role, allowed_info, history, user_message, raw_content=raw_content)
+    # Determine follow-up guide strategy before calling the sub-agent
+    role_history = [
+        m for m in history
+        if m.get("role") == "agent" and m.get("agent_name") == role["name"]
+    ]
+    guide_context = _select_guide_strategy(role, session, playbook, role_history, user_message)
+
+    reply = await call_sub_agent(
+        role, allowed_info, history, user_message,
+        raw_content=raw_content,
+        guide_context=guide_context,
+        session=session,
+    )
 
     evidence_items: list = []
     if extract_evidence:
@@ -471,6 +984,7 @@ async def handle_student_message(
         "role_found": True,
         "newly_unlocked": had_unlock,
         "unlock_check_ms": unlock_check_ms,
+        "guide_context": guide_context,
     }
 
 
@@ -526,6 +1040,33 @@ async def handle_message(
 
     history = db.get_messages(session_id)
     case = db.get_case(session["case_id"])
+    mission_state = session.get("mission_state") or {}
+
+    # CEO path: handled by dedicated orchestrator
+    if _is_ceo_role(role_name):
+        return await handle_ceo_message(session_id, session, playbook, history, student_message)
+
+    # Access control: only allow agents in the current active_agents list
+    if mission_state:
+        active_agents = mission_state.get("active_agents") or ["CEO"]
+        if not _agent_is_active(role_name, active_agents):
+            ceo_role = _find_role(playbook.get("roles") or [], "CEO")
+            ceo_name = (ceo_role or {}).get("name", "CEO")
+            return {
+                "reply": (
+                    f"You haven't been assigned to speak with {role_name} yet. "
+                    f"Return to {ceo_name} for your next mission."
+                ),
+                "new_evidence": [],
+                "agent_name": role_name,
+                "info_sufficient": False,
+                "roles_visited": list(session.get("interviewed_roles") or []),
+                "newly_unlocked": False,
+                "newly_checked_items": [],
+                "checklist_completed": list(session.get("checklist_completed") or []),
+                "unlock_check_ms": 0,
+                "mission_state": mission_state,
+            }
 
     # Critical path: unlock checks + agent reply only (no evidence extraction)
     result = await handle_student_message(
@@ -542,10 +1083,22 @@ async def handle_message(
     )
     reply = result["reply"]
     agent_name = result["agent_name"]
+    guide_context = result.get("guide_context")
 
     # Persist messages immediately so history stays consistent
     db.save_message(session_id, "student", student_message, agent_name)
     db.save_message(session_id, "agent", reply, agent_name)
+
+    # Persist follow-up history synchronously — do not defer to background.
+    if guide_context and guide_context.get("mode"):
+        follow_up_history = dict(session.get("follow_up_history") or {})
+        role_list = list(follow_up_history.get(agent_name, []))
+        role_list.append({
+            "mode": guide_context["mode"],
+            "target": guide_context.get("target_description", ""),
+        })
+        follow_up_history[agent_name] = role_list
+        db.update_follow_up_history(session_id, follow_up_history)
 
     # Evidence extraction + checklist + DB writes all happen in the background.
     # Role registration is also done there (inside the per-session write lock).
@@ -569,6 +1122,7 @@ async def handle_message(
         "newly_checked_items": [],
         "checklist_completed": list(session.get("checklist_completed") or []),
         "unlock_check_ms": result.get("unlock_check_ms", 0),
+        "mission_state": mission_state,
     }
 
 
@@ -592,6 +1146,49 @@ async def handle_message_stream(session_id: str, role_name: str, student_message
 
     history = db.get_messages(session_id)
     case = db.get_case(session["case_id"])
+    mission_state = session.get("mission_state") or {}
+
+    # CEO path: run non-streaming, emit as tokens
+    if _is_ceo_role(role_name):
+        result = await handle_ceo_message(session_id, session, playbook, history, student_message)
+        yield {"type": "unlock_done", "unlock_check_ms": 0}
+        yield {"type": "token", "content": result["reply"]}
+        yield {
+            "type": "done",
+            "agent_name": result["agent_name"],
+            "roles_visited": result["roles_visited"],
+            "info_sufficient": result["info_sufficient"],
+            "newly_unlocked": False,
+            "checklist_completed": result["checklist_completed"],
+            "unlock_check_ms": 0,
+            "mission_state": result["mission_state"],
+        }
+        return
+
+    # Access control
+    if mission_state:
+        active_agents = mission_state.get("active_agents") or ["CEO"]
+        if not _agent_is_active(role_name, active_agents):
+            ceo_role = _find_role(playbook.get("roles") or [], "CEO")
+            ceo_name = (ceo_role or {}).get("name", "CEO")
+            lock_msg = (
+                f"You haven't been assigned to speak with {role_name} yet. "
+                f"Return to {ceo_name} for your next mission."
+            )
+            yield {"type": "unlock_done", "unlock_check_ms": 0}
+            yield {"type": "token", "content": lock_msg}
+            yield {
+                "type": "done",
+                "agent_name": role_name,
+                "roles_visited": list(session.get("interviewed_roles") or []),
+                "info_sufficient": False,
+                "newly_unlocked": False,
+                "checklist_completed": list(session.get("checklist_completed") or []),
+                "unlock_check_ms": 0,
+                "mission_state": mission_state,
+            }
+            return
+
     roles: list = playbook.get("roles") or []
     info_atoms: list = playbook.get("info_atoms") or []
     raw_content: str = (case or {}).get("raw_content", "")
@@ -612,7 +1209,7 @@ async def handle_message_stream(session_id: str, role_name: str, student_message
         }
         return
 
-    # Phase 1: unlock condition check
+    # Phase 1: unlock condition check + guide strategy selection
     t0 = time.monotonic()
     allowed_info, had_unlock = await _compute_allowed_info(
         role, info_atoms, session, history, student_message
@@ -620,18 +1217,38 @@ async def handle_message_stream(session_id: str, role_name: str, student_message
     unlock_check_ms = int((time.monotonic() - t0) * 1000)
     yield {"type": "unlock_done", "unlock_check_ms": unlock_check_ms}
 
+    role_history = [
+        m for m in history
+        if m.get("role") == "agent" and m.get("agent_name") == role["name"]
+    ]
+    guide_context = _select_guide_strategy(role, session, playbook, role_history, student_message)
+
     # Phase 2: stream reply tokens
     agent_name = role["name"]
     full_reply = ""
     async for chunk in stream_sub_agent(
-        role, allowed_info, history, student_message, raw_content=raw_content
+        role, allowed_info, history, student_message,
+        raw_content=raw_content,
+        guide_context=guide_context,
+        session=session,
     ):
         full_reply += chunk
         yield {"type": "token", "content": chunk}
 
-    # Persist and background-process after streaming completes
+    # Persist messages and follow-up history synchronously before background tasks
     db.save_message(session_id, "student", student_message, agent_name)
     db.save_message(session_id, "agent", full_reply, agent_name)
+
+    if guide_context and guide_context.get("mode"):
+        follow_up_history = dict(session.get("follow_up_history") or {})
+        role_list = list(follow_up_history.get(agent_name, []))
+        role_list.append({
+            "mode": guide_context["mode"],
+            "target": guide_context.get("target_description", ""),
+        })
+        follow_up_history[agent_name] = role_list
+        db.update_follow_up_history(session_id, follow_up_history)
+
     asyncio.create_task(_background_post_process(
         session_id, session, playbook, full_reply, agent_name, had_unlock, student_message
     ))
@@ -648,4 +1265,5 @@ async def handle_message_stream(session_id: str, role_name: str, student_message
         "newly_unlocked": had_unlock,
         "checklist_completed": list(session.get("checklist_completed") or []),
         "unlock_check_ms": unlock_check_ms,
+        "mission_state": mission_state,
     }

@@ -33,6 +33,7 @@ ROLE_TYPE_ALIASES = {
     },
     "operations": {
         "head of operations",
+        "operations director",
         "vp of operations",
         "vp ops",
         "operations manager",

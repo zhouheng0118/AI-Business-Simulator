@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from pathlib import Path
 
@@ -32,9 +34,16 @@ def _prompt_file_for(role_name: str) -> Path:
     return PROMPT_DIR / ROLE_PROMPT_FILES.get(role_name.lower(), "generic_prompt.txt")
 
 
-def _load_prompt_template(role: dict) -> str:
+def _load_prompt_template(role: dict, mission_state: dict | None = None) -> str:
     """Load the best matching role prompt template from agents/prompts."""
     role_type = infer_role_type(role)
+
+    # CEO in mission orchestrator mode uses a dedicated prompt
+    if role_type == "strategy" and mission_state:
+        orchestrator_path = PROMPT_DIR / "ceo_orchestrator_prompt.txt"
+        if orchestrator_path.exists():
+            return orchestrator_path.read_text(encoding="utf-8")
+
     role_name = str(role.get("name", ""))
     title = str(role.get("title", ""))
     for value in (role_type, role_name, title):
@@ -66,7 +75,83 @@ End your response with exactly this self-check line:
 <boundary_check>NO</boundary_check>"""
 
 
-def _build_system_prompt(role: dict, allowed_info: list, raw_content: str = "") -> str:
+def _build_guide_block(guide_context: dict, role: dict, session: dict) -> str:
+    """Build the [GUIDE] prompt block from a resolved GuideContext."""
+    mode = guide_context["mode"]
+    role_name = role.get("name", "")
+
+    if mode == "validation":
+        data_lines = "\n".join(f"- {d}" for d in guide_context.get("available_data", []))
+        mode_instructions = (
+            "The student has provided a calculation or analytical result. Evaluate it using the data below.\n"
+            "If the reasoning is directionally correct: affirm briefly, then push one level deeper.\n"
+            "If the reasoning has a gap: probe the specific gap without giving the answer away.\n"
+            f"Expected correct insight: {guide_context.get('expected_insight', '')}\n"
+            f"Reference data:\n{data_lines}"
+        )
+    elif mode == "unlock_probe":
+        mode_instructions = (
+            "There is a deeper dimension to this topic the student hasn't reached yet.\n"
+            "Ask a question that points them in the right direction without revealing the hidden content.\n"
+            f"Hint direction (do NOT quote this directly): {guide_context.get('target_description', '')}"
+        )
+    elif mode == "calculation_challenge":
+        data_lines = "\n".join(f"- {d}" for d in guide_context.get("available_data", []))
+        mode_instructions = (
+            f"Challenge the student to calculate: {guide_context.get('target_description', '')}\n"
+            f"Formula approach: {guide_context.get('formula_hint', '')}\n"
+            "In your follow-up, provide ALL of the following data — the student needs them to compute the answer:\n"
+            f"{data_lines}\n"
+            "Give the numbers naturally in character, then ask the student what they conclude."
+        )
+    elif mode == "checklist_probe":
+        hints = "\n".join(f"- {h}" for h in guide_context.get("uncompleted_checklist_hints", []))
+        mode_instructions = (
+            "Guide the student toward this unexplored area (do NOT quote the label directly):\n"
+            f"{hints}\n"
+            "Ask a question that makes them want to investigate this."
+        )
+    elif mode == "cross_role_referral":
+        target_roles = ", ".join(guide_context.get("target_roles", []))
+        mode_instructions = (
+            f"The most valuable next step for the student is to speak with: {target_roles}\n"
+            "In character, suggest this and briefly explain why it matters for the current analysis.\n"
+            "Make clear they can return to you afterward."
+        )
+    else:  # deepen
+        mode_instructions = (
+            "Ask a follow-up that pushes the student to think about implications, trade-offs, or next steps\n"
+            "that follow naturally from what you just said."
+        )
+
+    history = (session.get("follow_up_history") or {}).get(role_name, [])
+    if history:
+        already_used = "\n".join(f"  - [{e['mode']}] {e['target']}" for e in history[-5:])
+    else:
+        already_used = "  (none yet)"
+
+    return (
+        f"\n\n---\n[GUIDE — MANDATORY FOLLOW-UP]\n"
+        "After your main response, end with exactly ONE follow-up question. No preamble, no label.\n\n"
+        f"Conversation stage: {guide_context.get('stage_description', '')}\n"
+        f"Mode: {mode}\n\n"
+        f"{mode_instructions}\n\n"
+        "Rules:\n"
+        f"- Speak entirely as {role_name} — no narrator voice, no meta-commentary\n"
+        "- Maximum 2 sentences for the follow-up\n"
+        "- Never reveal locked information in the follow-up question\n"
+        "- Do not repeat any follow-up question you have already asked this student:\n"
+        f"{already_used}"
+    )
+
+
+def _build_system_prompt(
+    role: dict,
+    allowed_info: list,
+    raw_content: str = "",
+    guide_context: dict | None = None,
+    session: dict | None = None,
+) -> str:
     """Build a role-specific system prompt with controlled information."""
     allowed_str = (
         "\n".join(f"- {info}" for info in allowed_info)
@@ -81,7 +166,8 @@ def _build_system_prompt(role: dict, allowed_info: list, raw_content: str = "") 
         else "(none)"
     )
 
-    template = _load_prompt_template(role)
+    ms = (session or {}).get("mission_state") or None
+    template = _load_prompt_template(role, mission_state=ms)
     prompt = template.format(
         name=role.get("name", ""),
         title=role.get("title", ""),
@@ -99,6 +185,39 @@ def _build_system_prompt(role: dict, allowed_info: list, raw_content: str = "") 
         )
 
     prompt += "\n\nIMPORTANT: Keep your replies concise — 3 to 4 sentences maximum."
+
+    if guide_context:
+        prompt += _build_guide_block(guide_context, role, session or {})
+
+    mission_state = (session or {}).get("mission_state") or {}
+    if mission_state and mission_state.get("phase") not in (None, "complete"):
+        from agents.missions import MISSIONS
+        current_idx = int(mission_state.get("current_mission", 0))
+        mission = MISSIONS[min(current_idx, len(MISSIONS) - 1)]
+        focus_areas_str = "\n".join(f"  - {f}" for f in mission["focus_areas"])
+        prompt += (
+            f"\n\n[Mission Context]\n"
+            f"You are operating in Mission {mission['index'] + 1}: {mission['title']}.\n"
+            f"The student has been assigned to collect specific information about:\n"
+            f"{focus_areas_str}\n"
+            "Answer their questions directly. Share relevant facts from your allowed_info.\n"
+            "Do not evaluate whether their mission is complete — that is the CEO's job.\n\n"
+            "[How to respond]\n"
+            "1. Answer first. A follow-up question is never a substitute for an answer.\n"
+            "2. Include 1-3 concrete case facts, numbers, or operational details when available.\n"
+            "3. Follow-up questions are restricted:\n"
+            "   - Allowed only when it directly helps the student collect information required "
+            "by the current mission's focus areas. Otherwise, end with a concrete next step or stop.\n"
+            "   - Do NOT end your response with a question unless you have a specific, concrete "
+            "reason why the student needs to hear it. If in doubt, skip the question.\n"
+            "   - When you do ask, it must advance the student toward completing this mission — "
+            "not open a new topic.\n"
+            "4. If asked for factual information: provide it directly. "
+            "If asked for a final recommendation: explain your position and identify what "
+            "evidence the student should test.\n"
+            "5. Use realistic management language. No vague or motivational phrases.\n"
+            "6. Help the student discover information — do not solve the case for them."
+        )
 
     return prompt
 
@@ -120,10 +239,16 @@ def _message_belongs_to_role_thread(msg: dict, role_name: str) -> bool:
 
 
 async def call_sub_agent(
-    role: dict, allowed_info: list, history: list, student_message: str, raw_content: str = ""
+    role: dict,
+    allowed_info: list,
+    history: list,
+    student_message: str,
+    raw_content: str = "",
+    guide_context: dict | None = None,
+    session: dict | None = None,
 ) -> str:
     """Call one stakeholder sub-agent with a role prompt and scoped history."""
-    system_prompt = _build_system_prompt(role, allowed_info, raw_content)
+    system_prompt = _build_system_prompt(role, allowed_info, raw_content, guide_context, session)
 
     # Include only messages for this role's conversation thread (last 10 turns)
     filtered_history = []
@@ -131,11 +256,13 @@ async def call_sub_agent(
         if _message_belongs_to_role_thread(msg, role["name"]):
             filtered_history.append(msg)
 
+    # Allow more tokens when a guide block is present so the follow-up fits
+    max_tokens = 600 if guide_context else 400
     raw = await chat(
         system_prompt,
         student_message,
         history=filtered_history,
-        max_tokens=400,
+        max_tokens=max_tokens,
         temperature=0.7,
     )
     return _strip_boundary_check(raw)
@@ -145,21 +272,27 @@ _BOUNDARY_TAIL = 60  # buffer size to safely strip trailing <boundary_check> tag
 
 
 async def stream_sub_agent(
-    role: dict, allowed_info: list, history: list, student_message: str, raw_content: str = ""
+    role: dict,
+    allowed_info: list,
+    history: list,
+    student_message: str,
+    raw_content: str = "",
+    guide_context: dict | None = None,
+    session: dict | None = None,
 ):
-
-    system_prompt = _build_system_prompt(role, allowed_info, raw_content)
+    system_prompt = _build_system_prompt(role, allowed_info, raw_content, guide_context, session)
     filtered_history = [
         msg for msg in history[-10:]
         if _message_belongs_to_role_thread(msg, role["name"])
     ]
 
+    max_tokens = 600 if guide_context else 400
     buffer = ""
     async for token in stream_chat(
         system_prompt,
         student_message,
         history=filtered_history,
-        max_tokens=400,
+        max_tokens=max_tokens,
         temperature=0.7,
     ):
         buffer += token

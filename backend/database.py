@@ -155,21 +155,41 @@ def save_message(
 
 
 def create_session(case_id: str, student_id: str) -> dict:
-    return (
-        _get_client().table("sessions")
-        .insert(
-            {
-                "case_id": case_id,
-                "student_id": student_id,
-                "status": "in_progress",
-                "evidence_board": [],
-                "interviewed_roles": [],
-                "checklist_completed": [],
-            }
+    from agents.missions import DEFAULT_MISSION_STATE
+    row: dict = {
+        "case_id": case_id,
+        "student_id": student_id,
+        "status": "in_progress",
+        "evidence_board": [],
+        "interviewed_roles": [],
+        "checklist_completed": [],
+        "mission_state": DEFAULT_MISSION_STATE,
+    }
+    try:
+        # follow_up_history column may not exist if migration hasn't run yet
+        return (
+            _get_client().table("sessions")
+            .insert({**row, "follow_up_history": {}})
+            .execute()
+            .data[0]
         )
-        .execute()
-        .data[0]
-    )
+    except Exception:
+        return (
+            _get_client().table("sessions")
+            .insert(row)
+            .execute()
+            .data[0]
+        )
+
+
+def update_follow_up_history(session_id: str, new_history: dict) -> None:
+    """Overwrite follow_up_history for a session. No-op if column doesn't exist yet."""
+    try:
+        _get_client().table("sessions").update(
+            {"follow_up_history": new_history}
+        ).eq("id", session_id).execute()
+    except Exception:
+        pass
 
 
 def update_checklist_completed(session_id: str, completed_indices: list[int]) -> None:
@@ -290,6 +310,12 @@ def update_evidence_and_roles(
 
     _get_client().table("sessions").update(
         {"evidence_board": board, "interviewed_roles": roles}
+    ).eq("id", session_id).execute()
+
+
+def update_mission_state(session_id: str, mission_state: dict) -> None:
+    _get_client().table("sessions").update(
+        {"mission_state": mission_state}
     ).eq("id", session_id).execute()
 
 
@@ -479,7 +505,14 @@ def create_case(
     return result.data[0]
 
 
-def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list | None = None, checklist_items: list | None = None) -> dict:
+def create_playbook(
+    case_id: str,
+    roles: list,
+    questions: list,
+    info_atoms: list | None = None,
+    checklist_items: list | None = None,
+    calculation_challenges: list | None = None,
+) -> dict:
     result = (
         _get_client().table("playbooks")
         .insert(
@@ -490,6 +523,7 @@ def create_playbook(case_id: str, roles: list, questions: list, info_atoms: list
                 "questions": questions,
                 "info_atoms": info_atoms or [],
                 "checklist_items": checklist_items or [],
+                "calculation_challenges": calculation_challenges or [],
                 "review_status": "pending",
             }
         )
