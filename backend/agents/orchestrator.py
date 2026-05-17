@@ -732,13 +732,15 @@ def _is_student_reporting(message: str) -> bool:
     return any(phrase in lower for phrase in _REPORT_PHRASES)
 
 
-def _parse_mission_verdict(text: str) -> str | None:
+def _parse_mission_verdict(text: str) -> str:
+    """Extract mission verdict tag; default to INCOMPLETE when missing/malformed
+    so a CEO reply that forgets the tag never silently advances the student."""
     match = re.search(
         r"<mission_verdict>(COMPLETE|INCOMPLETE)</mission_verdict>",
         text,
         re.IGNORECASE,
     )
-    return match.group(1).upper() if match else None
+    return match.group(1).upper() if match else "INCOMPLETE"
 
 
 def _strip_mission_verdict(text: str) -> str:
@@ -780,6 +782,7 @@ def _build_ceo_orchestrator_prompt(
     raw_content: str,
     ceo_role: dict | None,
     mission_state: dict,
+    evidence_board: list | None = None,
 ) -> str:
     from agents.missions import MISSION_COUNT
 
@@ -855,15 +858,50 @@ def _build_ceo_orchestrator_prompt(
                 "Then end with: <mission_verdict>COMPLETE</mission_verdict>"
             )
 
+        # Build evidence the student actually collected this mission — used as
+        # ground truth for fact-checking any numbers/claims in their report.
+        active_sources = {
+            r for r in (mission_state.get("active_agents") or [])
+            if r and r.lower() != "ceo"
+        }
+        relevant_evidence = [
+            e for e in (evidence_board or [])
+            if not active_sources or e.get("source") in active_sources
+        ]
+        if not relevant_evidence:
+            relevant_evidence = list(evidence_board or [])[:15]
+        else:
+            relevant_evidence = relevant_evidence[:15]
+
+        if relevant_evidence:
+            evidence_text = "\n".join(
+                f"- [{e.get('source', '?')}] {e.get('key_info', '')}"
+                + (f" (data: {e.get('data')})" if e.get("data") else "")
+                for e in relevant_evidence
+            )
+        else:
+            evidence_text = (
+                "NO EVIDENCE COLLECTED YET. The student has not actually interviewed "
+                "the required stakeholder(s). Any specific facts or numbers in their "
+                "report are fabricated."
+            )
+
         mode_block = (
             f"The student has reported back on Mission {current_idx + 1} of {MISSION_COUNT}.\n\n"
             "Look at your previous briefing in the conversation history — that is what you asked for. "
-            "Evaluate whether the student's report covers it.\n\n"
-            "If COMPLETE:\n"
+            "Evaluate whether the student's report covers it AND whether the specific "
+            "facts/numbers they cite are actually supported by the evidence they collected.\n\n"
+            f"Evidence the student actually collected from interviews:\n{evidence_text}\n\n"
+            "Fact-check rules (apply strictly):\n"
+            "- If the report cites a specific number, percentage, or named fact that does NOT "
+            "appear in the evidence above, mark INCOMPLETE and tell them to recheck with the stakeholder.\n"
+            "- If the report makes confident claims but no relevant evidence was collected, mark INCOMPLETE.\n"
+            "- Vague qualitative statements consistent with the evidence are acceptable.\n\n"
+            "If COMPLETE (report covers the briefing AND cited facts are grounded in evidence):\n"
             "  - Confirm what they got right (1 sentence).\n"
             f"  - {next_assignment}\n\n"
-            "If INCOMPLETE:\n"
-            "  - Name exactly what is missing.\n"
+            "If INCOMPLETE (missing coverage OR fabricated/unsupported numbers):\n"
+            "  - Name exactly what is missing or which figure is unsupported.\n"
             "  - Tell them which stakeholder to go back to and what to ask.\n"
             "  - End with: <mission_verdict>INCOMPLETE</mission_verdict>\n\n"
             f"Case context:\n{case_excerpt}\n\n"
@@ -955,8 +993,9 @@ async def handle_ceo_message(
     ceo_role = _find_role(roles, "CEO")
     ceo_name = (ceo_role or {}).get("name", "CEO")
 
+    evidence_board: list = session.get("evidence_board") or []
     system_prompt = _build_ceo_orchestrator_prompt(
-        mode, current_idx, roles, raw_content, ceo_role, mission_state
+        mode, current_idx, roles, raw_content, ceo_role, mission_state, evidence_board
     )
 
     raw_reply = await chat(
