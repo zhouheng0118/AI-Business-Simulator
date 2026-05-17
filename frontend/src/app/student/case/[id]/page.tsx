@@ -324,7 +324,7 @@ export default function CaseDetailPage() {
         <div style={{ minHeight: "100vh", background: "#f5f5f7", fontFamily: "SF Pro Text, system-ui" }}>
             {user && <TopBar user={user} onBack={() => router.push("/dashboard/student")} />}
 
-            <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px 132px" }}>
+            <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px 48px" }}>
 
                 {/* Loading skeleton */}
                 {loading && (
@@ -510,31 +510,12 @@ export default function CaseDetailPage() {
                                 ))}
                             </div>
                         </SectionCard>
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                            <StartButton session={session} loading={starting} onClick={handleStart} wide />
+                        </div>
                     </>
                 )}
             </div>
-
-            {!loading && !error && c && (
-                <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, pointerEvents: "none" }}>
-                    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 24px 18px" }}>
-                        <div
-                            style={{
-                                background: "rgba(248,250,252,0.92)",
-                                border: "1px solid #dbeafe",
-                                borderRadius: 14,
-                                padding: "10px 12px",
-                                display: "flex",
-                                justifyContent: "flex-end",
-                                boxShadow: "0 8px 30px -18px rgba(30,64,175,0.45)",
-                                backdropFilter: "blur(8px)",
-                                pointerEvents: "auto",
-                            }}
-                        >
-                            <StartButton session={session} loading={starting} onClick={handleStart} wide />
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
