@@ -9,13 +9,14 @@ policy, and fallback behavior can be changed in one place.
 import asyncio
 import os
 import re
+import time
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - dotenv is optional for tests
+except ImportError:  # pragma: no cover
     load_dotenv = None
 
 if load_dotenv:
@@ -30,23 +31,65 @@ MODEL_NAME: str = (
     or os.getenv("GEMINI_MODEL")
     or "gemma-4-26b-a4b-it"
 )
-MODEL_API_KEY: str | None = (
+
+# Support multiple comma-separated keys: GEMMA_API_KEY=key1,key2,key3
+_raw_keys: str | None = (
     os.getenv("GEMMA_API_KEY")
     or os.getenv("GEMINI_API_KEY")
     or os.getenv("GOOGLE_API_KEY")
 )
+_API_KEYS: list[str] = [k.strip() for k in _raw_keys.split(",") if k.strip()] if _raw_keys else []
+
 TEMPERATURE: float = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
 MAX_TOKENS: int = int(os.getenv("MODEL_MAX_TOKENS", "1024"))
 FALLBACK_REPLY = "I need to think about that more carefully. Could you rephrase the question?"
 
 logger = logging.getLogger(__name__)
 
-# Cap concurrent LLM calls to avoid bursting the rate limit when asyncio.gather fires many at once
-_LLM_SEMAPHORE = asyncio.Semaphore(2)
+
+class _KeyPool:
+    """Round-robin API key pool with pre-built clients and per-key rate-limit cooldown."""
+
+    _COOLDOWN = 60.0
+
+    def __init__(self, keys: list[str], base_url: str) -> None:
+        from openai import AsyncOpenAI
+        self._keys = keys
+        # Pre-build one client per key so there's zero setup cost per call
+        self._clients: dict[str, AsyncOpenAI] = {
+            k: AsyncOpenAI(base_url=base_url, api_key=k) for k in keys
+        }
+        self._cooldown_until: dict[str, float] = {}
+        self._index = 0
+        self._lock = asyncio.Lock()
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    async def next(self) -> tuple[str, Any] | tuple[None, None]:
+        """Return (key, client) for next available key, skipping cooled-down ones."""
+        async with self._lock:
+            now = time.monotonic()
+            for _ in range(len(self._keys)):
+                key = self._keys[self._index % len(self._keys)]
+                self._index += 1
+                if now >= self._cooldown_until.get(key, 0):
+                    return key, self._clients[key]
+            return None, None  # all keys are cooling down
+
+    async def mark_rate_limited(self, key: str, wait: float) -> None:
+        async with self._lock:
+            self._cooldown_until[key] = time.monotonic() + wait
+            logger.warning("Key ...%s rate-limited; cooling down %.0fs", key[-6:], wait)
+
+
+_pool = _KeyPool(_API_KEYS, MODEL_BASE_URL)
+
+# Each key handles up to 4 concurrent calls for maximum parallelism
+_LLM_SEMAPHORE = asyncio.Semaphore(max(len(_API_KEYS), 1) * 4)
 
 
 def _strip_hidden_thoughts(text: str) -> str:
-    """Remove provider-emitted hidden reasoning tags from visible output."""
     return re.sub(
         r"\s*<thought>.*?</thought>\s*",
         "",
@@ -94,14 +137,12 @@ async def _filter_thought_tags(source: AsyncIterator[str]) -> AsyncIterator[str]
 
 
 def _to_openai_role(role: str) -> str:
-    """Convert app-specific message roles into OpenAI-compatible roles."""
     if role in {"agent", "assistant"}:
         return "assistant"
     return "user"
 
 
 def _mock_reply(system_prompt: str, user_message: str) -> str:
-    """Return a deterministic local reply when no model key is configured."""
     lower_prompt = system_prompt.lower()
     if "chief financial officer" in lower_prompt or "cfo" in lower_prompt:
         return (
@@ -114,6 +155,21 @@ def _mock_reply(system_prompt: str, user_message: str) -> str:
     )
 
 
+def _build_messages(
+    system_prompt: str,
+    user_message: str,
+    history: Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for item in history or []:
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        messages.append({"role": _to_openai_role(str(item.get("role", "student"))), "content": content})
+    messages.append({"role": "user", "content": user_message})
+    return messages
+
+
 async def chat(
     system_prompt: str,
     user_message: str,
@@ -122,41 +178,20 @@ async def chat(
     max_tokens: int = MAX_TOKENS,
     temperature: float = TEMPERATURE,
 ) -> str:
-    """Call the configured chat model and return plain assistant text.
-
-    Args:
-        system_prompt: The system/developer instruction for the model.
-        user_message: The latest user message.
-        history: Optional prior app messages. Supports ``student``, ``agent``,
-            and ``assistant`` roles.
-        max_tokens: Maximum output tokens for this call.
-        temperature: Sampling temperature.
-
-    Returns:
-        The model response text. If the provider is unavailable or no API key
-        is configured, returns a safe fallback/mock response instead.
-    """
-    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
-    for item in history or []:
-        content = str(item.get("content", "")).strip()
-        if not content:
-            continue
-        messages.append(
-            {
-                "role": _to_openai_role(str(item.get("role", "student"))),
-                "content": content,
-            }
-        )
-    messages.append({"role": "user", "content": user_message})
-
-    if not MODEL_API_KEY:
+    if not _API_KEYS:
         return _mock_reply(system_prompt, user_message)
 
-    from openai import AsyncOpenAI, RateLimitError
+    from openai import RateLimitError
 
-    client = AsyncOpenAI(base_url=MODEL_BASE_URL, api_key=MODEL_API_KEY)
+    messages = _build_messages(system_prompt, user_message, history)
 
-    for attempt in range(3):
+    for attempt in range(len(_API_KEYS) * 2 + 1):
+        key, client = await _pool.next()
+        if key is None:
+            logger.warning("All API keys rate-limited; waiting 30s")
+            await asyncio.sleep(30)
+            continue
+
         try:
             async with _LLM_SEMAPHORE:
                 response = await client.chat.completions.create(
@@ -168,28 +203,15 @@ async def chat(
             raw = response.choices[0].message.content or ""
             return _strip_hidden_thoughts(raw) or FALLBACK_REPLY
         except RateLimitError as exc:
-            # Parse retry delay from the error message (e.g. "retry in 43.3s")
             match = re.search(r"retry in (\d+(?:\.\d+)?)", str(exc), re.IGNORECASE)
             wait = float(match.group(1)) if match else 30.0
-            wait = min(wait + 2, 90)  # add 2s buffer, cap at 90s
-            logger.warning(
-                "Rate limit hit (attempt %d/3) for model=%s; waiting %.0fs before retry",
-                attempt + 1, MODEL_NAME, wait,
-            )
-            if attempt < 2:
-                await asyncio.sleep(wait)
-            else:
-                logger.error("Rate limit persisted after 3 attempts; returning fallback")
-                return FALLBACK_REPLY
+            wait = min(wait + 2, 90)
+            await _pool.mark_rate_limited(key, wait)
         except Exception as exc:
-            logger.exception(
-                "Model chat completion failed for model=%s base_url=%s: %s",
-                MODEL_NAME,
-                MODEL_BASE_URL,
-                exc,
-            )
+            logger.exception("Model chat failed key=...%s model=%s: %s", key[-6:], MODEL_NAME, exc)
             return FALLBACK_REPLY
 
+    logger.error("All keys exhausted after %d attempts; returning fallback", attempt + 1)
     return FALLBACK_REPLY
 
 
@@ -199,7 +221,6 @@ async def complete(
     max_tokens: int = MAX_TOKENS,
     temperature: float = 0.0,
 ) -> str:
-    """Run a single-turn utility completion for extraction/classification."""
     return await chat(
         "You are a precise assistant. Follow the requested output format exactly.",
         prompt,
@@ -216,31 +237,24 @@ async def stream_chat(
     max_tokens: int = MAX_TOKENS,
     temperature: float = TEMPERATURE,
 ) -> AsyncIterator[str]:
-    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
-    for item in history or []:
-        content = str(item.get("content", "")).strip()
-        if not content:
-            continue
-        messages.append(
-            {
-                "role": _to_openai_role(str(item.get("role", "student"))),
-                "content": content,
-            }
-        )
-    messages.append({"role": "user", "content": user_message})
-
-    if not MODEL_API_KEY:
+    if not _API_KEYS:
         mock = _mock_reply(system_prompt, user_message)
         for word in mock.split():
             yield word + " "
             await asyncio.sleep(0.04)
         return
 
-    from openai import AsyncOpenAI, RateLimitError
+    from openai import RateLimitError
 
-    client = AsyncOpenAI(base_url=MODEL_BASE_URL, api_key=MODEL_API_KEY)
+    messages = _build_messages(system_prompt, user_message, history)
 
-    for attempt in range(3):
+    for _ in range(len(_API_KEYS) * 2 + 1):
+        key, client = await _pool.next()
+        if key is None:
+            logger.warning("All API keys rate-limited; waiting 30s")
+            await asyncio.sleep(30)
+            continue
+
         try:
             async with _LLM_SEMAPHORE:
                 stream = await client.chat.completions.create(
@@ -250,6 +264,7 @@ async def stream_chat(
                     temperature=temperature,
                     stream=True,
                 )
+
             async def _raw():
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
@@ -263,13 +278,10 @@ async def stream_chat(
             match = re.search(r"retry in (\d+(?:\.\d+)?)", str(exc), re.IGNORECASE)
             wait = float(match.group(1)) if match else 30.0
             wait = min(wait + 2, 90)
-            logger.warning("Rate limit hit (attempt %d/3); waiting %.0fs", attempt + 1, wait)
-            if attempt < 2:
-                await asyncio.sleep(wait)
-            else:
-                yield FALLBACK_REPLY
-                return
+            await _pool.mark_rate_limited(key, wait)
         except Exception as exc:
-            logger.exception("Streaming chat failed: %s", exc)
+            logger.exception("Streaming chat failed key=...%s: %s", key[-6:], exc)
             yield FALLBACK_REPLY
             return
+
+    yield FALLBACK_REPLY
