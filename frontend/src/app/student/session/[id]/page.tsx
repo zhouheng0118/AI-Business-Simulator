@@ -393,14 +393,16 @@ function ChatWindow({ messages, selectedRole, sending, role, roles, onSelectRole
         onTopicClick?.(topic);
     };
 
+    const isGuideCollapsed = hasAskedFirstQuestion && showPreview === false;
+
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div
                 style={{
-                    flex: hasAskedFirstQuestion ? "0 0 50%" : "1 1 auto",
-                    minHeight: hasAskedFirstQuestion ? 180 : 0,
-                    overflowY: "auto",
-                    padding: "12px 20px 8px",
+                    flex: isGuideCollapsed ? "0 0 auto" : hasAskedFirstQuestion ? "0 0 50%" : "1 1 auto",
+                    minHeight: isGuideCollapsed ? 0 : hasAskedFirstQuestion ? 180 : 0,
+                    overflowY: isGuideCollapsed ? "visible" : "auto",
+                    padding: isGuideCollapsed ? "10px 20px 6px" : "12px 20px 8px",
                     borderBottom: hasAskedFirstQuestion ? "1px solid #edf1f7" : "none",
                     background: "#fff",
                     transition: "flex-basis 0.25s ease",
@@ -435,8 +437,8 @@ function ChatWindow({ messages, selectedRole, sending, role, roles, onSelectRole
 
             <div
                 style={{
-                    flex: hasAskedFirstQuestion ? "1 1 50%" : "0 0 0",
-                    minHeight: hasAskedFirstQuestion ? 0 : 0,
+                    flex: isGuideCollapsed ? "1 1 auto" : hasAskedFirstQuestion ? "1 1 50%" : "0 0 0",
+                    minHeight: 0,
                     overflowY: hasAskedFirstQuestion ? "auto" : "hidden",
                     padding: hasAskedFirstQuestion ? "10px 20px 16px" : "0 20px",
                     display: "flex",
