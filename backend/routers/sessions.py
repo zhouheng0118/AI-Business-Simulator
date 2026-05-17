@@ -226,8 +226,8 @@ async def submit_session(session_id: str, body: SubmitSessionIn):
         result = await score_answer(q, ans.answer, evidence_board, case_context)
         question_scores.append(result)
 
-    total_score = sum(q["question_total"] for q in question_scores)
-    total_max = sum(q["question_max"] for q in question_scores)
+    llm_score = sum(q["question_total"] for q in question_scores)
+    llm_max = sum(q["question_max"] for q in question_scores)
 
     interviewed: list = session.get("interviewed_roles") or []
     all_roles = (
@@ -235,11 +235,21 @@ async def submit_session(session_id: str, body: SubmitSessionIn):
     ) or _DEFAULT_ALL_ROLES
     missed = [r for r in all_roles if r not in interviewed]
 
+    # Scoring formula:
+    #   60 pts — all missions completed
+    #   40 pts — reflection report quality (LLM-scored, scaled to 40)
+    missions_complete = (session.get("mission_state") or {}).get("phase") == "complete"
+    base_score = 60.0 if missions_complete else 0.0
+    reflection_score = round((llm_score / llm_max) * 40, 1) if llm_max > 0 else 0.0
+    final_total = round(base_score + reflection_score, 1)
+
     interview_path = {
         "roles_visited": interviewed,
         "roles_missed": missed,
         "key_info_captured": [e.get("key_info", "") for e in evidence_board[:5]],
         "key_info_missed": [],
+        "base_score": base_score,
+        "reflection_score": reflection_score,
     }
 
     blind_spots = []
@@ -263,8 +273,8 @@ async def submit_session(session_id: str, body: SubmitSessionIn):
     db.save_report(
         session_id,
         question_scores,
-        total_score,
-        total_max,
+        final_total,
+        100.0,
         interview_path,
         blind_spots,
         overall_comment,

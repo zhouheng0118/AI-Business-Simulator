@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 import re
-import threading
 
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-_thread_local = threading.local()
+_client: Any | None = None
 _STOPWORDS = {
     "a",
     "an",
@@ -89,16 +88,17 @@ _CONCEPT_TERMS = {
 
 
 def _get_client() -> Any:
-    """Return a per-thread Supabase client to avoid HTTP/2 connection sharing across threads."""
-    if not hasattr(_thread_local, "client"):
+    """Return a Supabase client, creating it only when DB access is needed."""
+    global _client
+    if _client is None:
         if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
             raise RuntimeError(
                 "SUPABASE_URL and SUPABASE_SERVICE_KEY must be configured for database access."
             )
         from supabase import create_client
 
-        _thread_local.client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    return _thread_local.client
+        _client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    return _client
 
 
 def get_session(session_id: str) -> dict | None:
@@ -416,6 +416,16 @@ def save_submissions(session_id: str, answers: list[dict]) -> None:
                 "cited_evidence": ans.get("cited_evidence", []),
             }
         ).execute()
+
+
+def get_submissions(session_id: str) -> list:
+    return (
+        _get_client().table("submissions")
+        .select("*")
+        .eq("session_id", session_id)
+        .execute()
+        .data
+    )
 
 
 def save_report(

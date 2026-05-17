@@ -422,6 +422,19 @@ def _get_last_follow_up(session: dict, role_name: str) -> dict | None:
     return history[-1] if history else None
 
 
+def _student_approaching_atom(atom: dict, msg_words: set[str]) -> bool:
+    """Return True if the student's message is already heading toward this atom's domain.
+
+    When approaching, the student will naturally unlock the atom by asking — no probe needed.
+    When NOT approaching, the agent should guide them there with an unlock_probe.
+    """
+    domain = _atom_domain_paraphrase(atom)
+    domain_words = _word_set(domain)
+    if not domain_words:
+        return False
+    return len(domain_words & msg_words) / len(domain_words) >= 0.25
+
+
 def _atom_domain_paraphrase(atom: dict) -> str:
     """Derive a safe domain hint from an atom's unlock condition without quoting the fact."""
     unlock = atom.get("unlock_condition", "").strip()
@@ -524,6 +537,7 @@ def _select_guide_strategy(
     evidence_board: list = session.get("evidence_board") or []
     completed_set = set(session.get("checklist_completed") or [])
     stage = _stage_description(role_history)
+    msg_words = _word_set(current_student_message)
 
     # Priority 1: Validation
     # Use follow_up_history to check if last issued follow-up was a calculation_challenge.
@@ -563,6 +577,7 @@ def _select_guide_strategy(
         and _level_gate_passed(a, session)
         and not _already_unlocked(a, evidence_board)
         and not _follow_up_already_used(session, role_name, "unlock_probe", _atom_domain_paraphrase(a))
+        and not _student_approaching_atom(a, msg_words)
     ]
     if unlockable:
         # Prefer lowest level first
@@ -634,7 +649,6 @@ def _select_guide_strategy(
         item for i, item in enumerate(checklist_items)
         if i not in completed_set
     ]
-    msg_words = _word_set(current_student_message)
     referral_candidates: list[tuple[dict, dict]] = []
     seen_candidates: set[str] = set()
     for item in uncompleted_all:
@@ -748,70 +762,120 @@ def _agent_is_active(role_name: str, active_agents: list) -> bool:
     return False
 
 
+def _build_roles_summary(roles: list) -> str:
+    """Build a readable stakeholder list from playbook roles."""
+    lines = []
+    for r in roles:
+        name = r.get("name", "")
+        title = r.get("title", "")
+        focus = r.get("focus_area", "")
+        lines.append(f"- {name} ({title}): {focus}")
+    return "\n".join(lines)
+
+
 def _build_ceo_orchestrator_prompt(
     mode: str,
-    mission: dict,
-    next_mission: dict | None,
+    current_idx: int,
+    roles: list,
+    raw_content: str,
     ceo_role: dict | None,
     mission_state: dict,
 ) -> str:
-    from agents.missions import MISSIONS
+    from agents.missions import MISSION_COUNT
 
     name = (ceo_role or {}).get("name", "CEO")
     title = (ceo_role or {}).get("title", "Chief Executive Officer")
-    focus_areas_str = "\n".join(f"  - {f}" for f in mission["focus_areas"])
-    active_agents_str = ", ".join(mission["active_agents"])
-    next_briefing = (
-        next_mission["briefing_instruction"]
-        if next_mission
-        else (
-            "All 5 missions are complete. Congratulate the student briefly "
-            "and tell them they are ready to proceed to the answer."
-        )
-    )
+    roles_summary = _build_roles_summary(roles)
+    missions_done = len(mission_state.get("missions_completed") or [])
+    # Truncate raw content to avoid token overload
+    case_excerpt = (raw_content or "")[:1200].strip()
 
     if mode == "BRIEFING":
+        already_investigated = ", ".join(
+            r for r in (mission_state.get("interviewed_roles_by_mission") or [])
+        ) or "nothing yet"
+
         mode_block = (
-            f"You are giving the Mission {mission['index'] + 1} of 5 briefing.\n\n"
-            f"Format your response EXACTLY like this (use real newlines, no markdown symbols):\n\n"
-            f"Mission {mission['index'] + 1} of 5: {mission['title']}\n\n"
-            f"[1-2 sentences of strategic context — why this mission matters right now]\n\n"
-            f"Speak with: {active_agents_str}\n\n"
-            f"Your assignment:\n"
-            f"{mission['briefing_instruction']}\n\n"
-            f"Come back and tell me what you found.\n\n"
-            f"---\n"
-            f"Rules: Do NOT list other missions. Do NOT use bullet points or markdown. "
-            f"The 'Speak with:' line must appear verbatim. Reveal only this mission. Tone: direct and executive."
+            "Write a mission briefing for a student consultant. "
+            "Match the style, tone, and length of the two examples below — "
+            "same executive voice, same paragraph structure, same level of specificity. "
+            "Do not copy the examples. Generate a fresh briefing based on the case context provided.\n\n"
+
+            "--- EXAMPLE 1 ---\n"
+            "Good. Let's start with how Marriott actually operates.\n\n"
+            "Before we evaluate cost of capital, we need to understand whether the different "
+            "divisions are facing the same business conditions. Lodging, contract services, "
+            "and restaurants may look like one company from the outside, but internally they "
+            "may have very different risk, growth, and capital needs.\n\n"
+            "For this round, speak with the Operations Director. Your task is to understand "
+            "how the major divisions differ operationally.\n\n"
+            "When you come back, I want a short diagnosis with two parts:\n"
+            "the main operational differences across divisions;\n"
+            "why those differences may matter for investment evaluation.\n\n"
+
+            "--- EXAMPLE 2 ---\n"
+            "Good. Start with the operating side.\n\n"
+            "Marriott's growth has created a more complex company than it used to be. "
+            "Before we make any financial judgment, I need you to find out whether our "
+            "divisions are similar enough to be evaluated under one standard.\n\n"
+            "Talk with the Operations Director first. Focus on how the businesses differ "
+            "in their day-to-day operations, capital needs, growth patterns, and risk exposure.\n\n"
+            "Bring back a brief summary of the top 2-3 differences you find, plus your view "
+            "on whether those differences could affect Marriott's cost of capital decision.\n\n"
+
+            "--- NOW WRITE THE BRIEFING ---\n"
+            f"This is Mission {current_idx + 1} of {MISSION_COUNT}.\n"
+            f"Missions completed so far: {missions_done}\n\n"
+            f"Case context (use this to determine what to investigate):\n{case_excerpt}\n\n"
+            f"Available stakeholders the student can speak with:\n{roles_summary}\n\n"
+            "Your task: decide what the most important thing to investigate at this stage is, "
+            "which stakeholder(s) to send the student to, and what specific deliverable to request.\n\n"
+            "Rules:\n"
+            "- Open with 'Good.' followed by one short direction-setting sentence\n"
+            "- 1-2 sentences of strategic framing (why this investigation matters now)\n"
+            "- Name the stakeholder(s) to speak with and what to focus on\n"
+            "- End with a specific 'bring back' request\n"
+            "- Do NOT mention other missions\n"
+            "- Total: 4-6 sentences across 3-4 short paragraphs"
         )
 
     elif mode == "EVALUATING":
+        is_last = (current_idx + 1) >= MISSION_COUNT
+        if is_last:
+            next_assignment = (
+                "All missions are complete. Briefly congratulate them and tell them "
+                "they have enough to form a recommendation. "
+                "End with: <mission_verdict>COMPLETE</mission_verdict>"
+            )
+        else:
+            next_assignment = (
+                f"Introduce Mission {current_idx + 2} of {MISSION_COUNT} in the same style as the examples above — "
+                "decide the next logical investigation area based on the case context, "
+                "name the appropriate stakeholder(s), and state the deliverable. "
+                "Then end with: <mission_verdict>COMPLETE</mission_verdict>"
+            )
+
         mode_block = (
-            f"You are evaluating whether Mission {mission['index'] + 1} of 5 is complete.\n"
-            f"Mission: {mission['title']}\n"
-            f"Completion criteria: {mission['completion_criteria']}\n"
-            f"Assigned agent(s) the student visited: {active_agents_str}\n\n"
-            "The student just reported back. Use their message and the recent conversation history "
-            "with the sub-agents to evaluate their report against the criteria above.\n\n"
-            "If the report satisfies the criteria (COMPLETE):\n"
-            "  - Confirm what they got right in 1-2 sentences.\n"
-            "  - Optionally note one thing they could probe deeper (skip if not needed).\n"
-            f"  - Introduce the next assignment: {next_briefing}\n"
-            "  - End your response with: <mission_verdict>COMPLETE</mission_verdict>\n\n"
-            "If the report does NOT satisfy the criteria (INCOMPLETE):\n"
-            "  - Name exactly what is missing (the specific fact or concept).\n"
-            "  - Redirect: tell them which agent to go back to and what to ask.\n"
-            "  - End your response with: <mission_verdict>INCOMPLETE</mission_verdict>\n\n"
-            "Rules: do not reveal what the student should have found. "
-            "Tone: direct mentor. 3-5 sentences total. Do not ask a question."
+            f"The student has reported back on Mission {current_idx + 1} of {MISSION_COUNT}.\n\n"
+            "Look at your previous briefing in the conversation history — that is what you asked for. "
+            "Evaluate whether the student's report covers it.\n\n"
+            "If COMPLETE:\n"
+            "  - Confirm what they got right (1 sentence).\n"
+            f"  - {next_assignment}\n\n"
+            "If INCOMPLETE:\n"
+            "  - Name exactly what is missing.\n"
+            "  - Tell them which stakeholder to go back to and what to ask.\n"
+            "  - End with: <mission_verdict>INCOMPLETE</mission_verdict>\n\n"
+            f"Case context:\n{case_excerpt}\n\n"
+            f"Available stakeholders:\n{roles_summary}\n\n"
+            "Tone: direct mentor. 4-6 sentences total. Do not ask a question."
         )
 
     else:  # REDIRECTING
         mode_block = (
-            f"The student is currently on Mission {mission['index'] + 1}: {mission['title']}.\n"
-            f"They should be speaking with: {active_agents_str}.\n\n"
-            "Briefly remind them of what they need to collect (1-2 sentences). "
-            "Tell them to come back once they have it. "
+            "The student sent you a message while they are still on an active mission. "
+            "Look at your previous briefing in the conversation history. "
+            "Briefly remind them of what they still need to collect and bring back. "
             "Maximum 2 sentences. Do not ask a question."
         )
 
@@ -825,35 +889,74 @@ def _build_ceo_orchestrator_prompt(
     )
 
 
+async def _extract_mission_brief(reply: str) -> dict:
+    """Extract a one-sentence task and handoff from a CEO briefing message."""
+    prompt = (
+        f"CEO message: \"{reply[:800]}\"\n\n"
+        "From this CEO briefing, extract:\n"
+        "1. task: one sentence describing what to investigate\n"
+        "2. handoff: one sentence describing what the student should bring back to the CEO\n\n"
+        "Reply with ONLY valid JSON: {\"task\": \"...\", \"handoff\": \"...\"}"
+    )
+    raw = await _llm(prompt, max_tokens=120)
+    try:
+        result = json.loads(raw.strip())
+        if isinstance(result, dict) and "task" in result and "handoff" in result:
+            return result
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return {}
+
+
+async def _extract_active_roles(reply: str, roles: list) -> list[str]:
+    """Extract which role names the CEO assigned in its briefing reply."""
+    if not roles:
+        return []
+    role_names = [r["name"] for r in roles]
+    prompt = (
+        f"CEO message: \"{reply}\"\n\n"
+        f"Available roles: {', '.join(role_names)}\n\n"
+        "Which roles from the available list did the CEO direct the student to speak with? "
+        "Reply with ONLY a JSON array of exact role names, e.g. [\"CFO\"]. "
+        "Return [] if none are clearly assigned."
+    )
+    raw = await _llm(prompt, max_tokens=80)
+    try:
+        result = json.loads(raw.strip())
+        if isinstance(result, list):
+            return [r for r in result if r in role_names]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return []
+
+
 async def handle_ceo_message(
     session_id: str,
     session: dict,
     playbook: dict,
     history: list,
     student_message: str,
+    raw_content: str = "",
 ) -> dict:
-    from agents.missions import MISSIONS
+    from agents.missions import MISSION_COUNT
 
     mission_state = dict(session.get("mission_state") or {})
     current_idx = int(mission_state.get("current_mission", 0))
     phase = mission_state.get("phase", "briefing")
 
-    # Determine CEO mode for this turn
     if phase == "briefing":
         mode = "BRIEFING"
     elif phase == "investigating":
         mode = "EVALUATING" if _is_student_reporting(student_message) else "REDIRECTING"
-    else:  # complete or unknown
+    else:
         mode = "REDIRECTING"
 
-    current_mission = MISSIONS[min(current_idx, len(MISSIONS) - 1)]
-    next_mission = MISSIONS[current_idx + 1] if current_idx + 1 < len(MISSIONS) else None
-
-    ceo_role = _find_role(playbook.get("roles") or [], "CEO")
+    roles = playbook.get("roles") or []
+    ceo_role = _find_role(roles, "CEO")
     ceo_name = (ceo_role or {}).get("name", "CEO")
 
     system_prompt = _build_ceo_orchestrator_prompt(
-        mode, current_mission, next_mission, ceo_role, mission_state
+        mode, current_idx, roles, raw_content, ceo_role, mission_state
     )
 
     raw_reply = await chat(
@@ -867,12 +970,20 @@ async def handle_ceo_message(
     verdict = _parse_mission_verdict(raw_reply)
     reply = _strip_mission_verdict(raw_reply)
 
-    # Update mission state based on outcome
     new_mission_state = dict(mission_state)
 
+    summaries = dict(new_mission_state.get("mission_summaries") or {})
+
     if mode == "BRIEFING":
+        assigned, brief = await asyncio.gather(
+            _extract_active_roles(reply, roles),
+            _extract_mission_brief(reply),
+        )
         new_mission_state["phase"] = "investigating"
-        new_mission_state["active_agents"] = ["CEO"] + list(current_mission["active_agents"])
+        new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + assigned))
+        if brief:
+            summaries[str(current_idx)] = brief
+            new_mission_state["mission_summaries"] = summaries
 
     elif mode == "EVALUATING" and verdict == "COMPLETE":
         completed = list(mission_state.get("missions_completed") or [])
@@ -880,13 +991,21 @@ async def handle_ceo_message(
             completed.append(current_idx)
         next_idx = current_idx + 1
         new_mission_state["missions_completed"] = completed
-        if next_idx >= len(MISSIONS):
+        if next_idx >= MISSION_COUNT:
             new_mission_state["phase"] = "complete"
             new_mission_state["active_agents"] = ["CEO"]
         else:
+            # CEO already briefed next mission in this reply — extract assigned roles and brief
+            assigned, brief = await asyncio.gather(
+                _extract_active_roles(reply, roles),
+                _extract_mission_brief(reply),
+            )
             new_mission_state["current_mission"] = next_idx
-            new_mission_state["phase"] = "briefing"
-            new_mission_state["active_agents"] = ["CEO"]
+            new_mission_state["phase"] = "investigating"
+            new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + assigned))
+            if brief:
+                summaries[str(next_idx)] = brief
+                new_mission_state["mission_summaries"] = summaries
 
     if new_mission_state != mission_state:
         db.update_mission_state(session_id, new_mission_state)
@@ -1044,7 +1163,10 @@ async def handle_message(
 
     # CEO path: handled by dedicated orchestrator
     if _is_ceo_role(role_name):
-        return await handle_ceo_message(session_id, session, playbook, history, student_message)
+        return await handle_ceo_message(
+            session_id, session, playbook, history, student_message,
+            raw_content=(case or {}).get("raw_content", ""),
+        )
 
     # Access control: only allow agents in the current active_agents list
     if mission_state:
@@ -1150,7 +1272,10 @@ async def handle_message_stream(session_id: str, role_name: str, student_message
 
     # CEO path: run non-streaming, emit as tokens
     if _is_ceo_role(role_name):
-        result = await handle_ceo_message(session_id, session, playbook, history, student_message)
+        result = await handle_ceo_message(
+            session_id, session, playbook, history, student_message,
+            raw_content=(case or {}).get("raw_content", ""),
+        )
         yield {"type": "unlock_done", "unlock_check_ms": 0}
         yield {"type": "token", "content": result["reply"]}
         yield {

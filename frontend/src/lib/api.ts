@@ -91,12 +91,18 @@ export interface ApiCaseDetail {
     playbook: ApiPlaybook | null;
 }
 
+export interface MissionSummary {
+    task: string;
+    handoff: string;
+}
+
 export interface MissionState {
     current_mission: number;
     phase: "briefing" | "investigating" | "evaluating" | "complete";
     active_agents: string[];
     missions_completed: number[];
     mission_reports: Record<string, string>;
+    mission_summaries?: Record<string, MissionSummary>;
 }
 
 export const DEFAULT_MISSION_STATE: MissionState = {

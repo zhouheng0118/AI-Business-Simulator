@@ -186,32 +186,30 @@ def _build_system_prompt(
 
     prompt += "\n\nIMPORTANT: Keep your replies concise — 3 to 4 sentences maximum."
 
-    if guide_context:
+    mission_state = (session or {}).get("mission_state") or {}
+    mission_active = bool(mission_state and mission_state.get("phase") not in (None, "complete"))
+
+    # GUIDE block drives structured follow-up only in mission mode.
+    # Outside mission mode the agent answers freely without a mandated follow-up.
+    if guide_context and mission_active:
         prompt += _build_guide_block(guide_context, role, session or {})
 
-    mission_state = (session or {}).get("mission_state") or {}
-    if mission_state and mission_state.get("phase") not in (None, "complete"):
-        from agents.missions import MISSIONS
+    if mission_active:
+        from agents.missions import MISSION_COUNT
         current_idx = int(mission_state.get("current_mission", 0))
-        mission = MISSIONS[min(current_idx, len(MISSIONS) - 1)]
-        focus_areas_str = "\n".join(f"  - {f}" for f in mission["focus_areas"])
         prompt += (
             f"\n\n[Mission Context]\n"
-            f"You are operating in Mission {mission['index'] + 1}: {mission['title']}.\n"
-            f"The student has been assigned to collect specific information about:\n"
-            f"{focus_areas_str}\n"
-            "Answer their questions directly. Share relevant facts from your allowed_info.\n"
-            "Do not evaluate whether their mission is complete — that is the CEO's job.\n\n"
+            f"You are operating in Mission {current_idx + 1} of {MISSION_COUNT}.\n"
+            f"The student has been assigned by the CEO to investigate your domain.\n"
+            "Answer their questions directly. Share relevant facts from your allowed_info.\n\n"
             "[How to respond]\n"
             "1. Answer first. A follow-up question is never a substitute for an answer.\n"
-            "2. Include 1-3 concrete case facts, numbers, or operational details when available.\n"
-            "3. Follow-up questions are restricted:\n"
-            "   - Allowed only when it directly helps the student collect information required "
-            "by the current mission's focus areas. Otherwise, end with a concrete next step or stop.\n"
-            "   - Do NOT end your response with a question unless you have a specific, concrete "
-            "reason why the student needs to hear it. If in doubt, skip the question.\n"
-            "   - When you do ask, it must advance the student toward completing this mission — "
-            "not open a new topic.\n"
+            "2. Include 1-3 concrete facts, numbers, or operational details when available.\n"
+            "3. Closing signal: if the student has gathered the key facts from your domain and "
+            "demonstrates they understand them (e.g. correctly summarises a metric, draws the "
+            "right conclusion, or says they are ready to move on), affirm briefly and tell them: "
+            "'You have what you need from me — go report your findings to the CEO.' "
+            "When this happens, skip the follow-up question from [GUIDE] above.\n"
             "4. If asked for factual information: provide it directly. "
             "If asked for a final recommendation: explain your position and identify what "
             "evidence the student should test.\n"

@@ -178,6 +178,13 @@ export default function ReportPage() {
                             <span style={{ fontSize: 11, color: "#7a7a7a", border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "2px 10px" }}>
                                 {report.interview_path?.key_info_captured?.length ?? 0} evidence items collected
                             </span>
+                            <span style={{ fontSize: 11, border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "2px 10px",
+                                color: (report.interview_path?.base_score ?? 0) > 0 ? "#1a7f37" : "#c0392b" }}>
+                                Missions: {report.interview_path?.base_score ?? 0} / 60 pts
+                            </span>
+                            <span style={{ fontSize: 11, color: "#7a7a7a", border: "0.5px solid #e0e0e0", borderRadius: 20, padding: "2px 10px" }}>
+                                Reflection: {report.interview_path?.reflection_score ?? 0} / 40 pts
+                            </span>
                         </div>
                     </div>
                 </div>

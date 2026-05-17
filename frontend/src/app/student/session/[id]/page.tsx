@@ -8,30 +8,6 @@ import {
     MissionState, DEFAULT_MISSION_STATE,
 } from "@/lib/api";
 
-const MISSION_TITLES = [
-    "Diagnose operational bottlenecks",
-    "Understand customer impact",
-    "Quantify the financial case",
-    "Examine implementation costs",
-    "Evaluate risks and assumptions",
-];
-
-const MISSION_FOCUS_AREAS = [
-    ["Fragmented info systems", "Inventory visibility", "SKU complexity", "Distribution flow"],
-    ["Product availability", "Delivery lead time", "Contractor requirements", "Switching risk"],
-    ["CapEx & license costs", "Benefits & savings", "Margin improvement", "Discount rate"],
-    ["Employees & consultants", "Task force size", "System maintenance", "Wave phasing"],
-    ["Off-the-shelf ERP fit", "Employee resistance", "Implementation risk", "NPV sensitivity"],
-];
-
-const MISSION_AGENTS = [
-    ["Operations Director"],
-    ["Customer Representative"],
-    ["CFO"],
-    ["CFO", "Operations Director"],
-    ["Local Expert", "CFO", "Operations Director"],
-];
-
 
 const DEFAULT_ROLES: ApiPlaybookRole[] = [
     { name: "CEO",                     title: "Chief Executive Officer", focus_area: "Strategic vision & growth pressure" },
@@ -288,7 +264,7 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
             </div>
             {/* 可问话题 chips */}
             {topics.length > 0 && (
-                <div style={{ padding: "0 32px 28px 28px", marginTop: 18 }}>
+                <div style={{ padding: "0 32px 0 28px", marginTop: 18 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: c.accent, marginBottom: 10, letterSpacing: "-0.1px" }}>You can ask about</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                         {topics.map((topic, i) => (
@@ -701,10 +677,43 @@ function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, t
 
 // Mission panel (replaces right-side checklist)
 
-function MissionPanel({ missionState }: { missionState: MissionState }) {
+const MISSION_COUNT = 5;
+
+function parseCeoBriefing(text: string): { task: string; handoff: string } | null {
+    const sentences = text
+        .replace(/\n+/g, " ")
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 15);
+    if (sentences.length < 2) return null;
+
+    const handoffRe = /bring back|when you (come|return)|i want|report back|your deliverable|i need you to bring/i;
+    const taskRe = /speak with|talk with|focus on|your task|investigate|find out|understand|look into/i;
+
+    const handoff = [...sentences].reverse().find((s) => handoffRe.test(s))
+        ?? sentences[sentences.length - 1];
+    const task = sentences.find((s) => taskRe.test(s))
+        ?? sentences[Math.min(1, sentences.length - 1)];
+
+    return { task, handoff };
+}
+
+function MissionPanel({ missionState, messages }: { missionState: MissionState; messages: ApiMessage[] }) {
     const idx = missionState.current_mission;
     const phase = missionState.phase;
     const completed = new Set(missionState.missions_completed);
+    const totalMissions = MISSION_COUNT;
+
+    const assignedAgents = missionState.active_agents.filter(
+        (a) => !/^ceo$/i.test(a)
+    );
+
+    // Prefer backend-extracted summary; fall back to parsing the last CEO message
+    const backendSummary = missionState.mission_summaries?.[String(idx)];
+    const lastCeoMsg = [...messages].reverse().find(
+        (m) => m.role === "agent" && m.agent_name && /ceo/i.test(m.agent_name)
+    );
+    const summary = backendSummary ?? (lastCeoMsg ? parseCeoBriefing(lastCeoMsg.content) : null);
 
     return (
         <div style={{ width: 244, flexShrink: 0, borderLeft: "1px solid #e8eaf0", background: "#f8f9fc", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -716,7 +725,7 @@ function MissionPanel({ missionState }: { missionState: MissionState }) {
                         Investigation Roadmap
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {MISSION_TITLES.map((title, i) => {
+                        {Array.from({ length: totalMissions }, (_, i) => {
                             const isDone = completed.has(i);
                             const isActive = i === idx && phase !== "complete";
                             const icon = isDone ? "✓" : isActive ? "▶" : "○";
@@ -726,8 +735,10 @@ function MissionPanel({ missionState }: { missionState: MissionState }) {
                                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 7px", borderRadius: 7, background: bgColor }}>
                                     <span style={{ fontSize: 11, fontWeight: 700, color, flexShrink: 0, width: 12, textAlign: "center" }}>{icon}</span>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 11, color: isDone ? "#4b5563" : isActive ? "#0066cc" : "#9a9a9a", fontWeight: isActive ? 600 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            M{i + 1} {title}
+                                        <div style={{ fontSize: 11, color: isDone ? "#4b5563" : isActive ? "#0066cc" : "#9a9a9a", fontWeight: isActive ? 600 : 500 }}>
+                                            Mission {i + 1}
+                                            {isDone && <span style={{ marginLeft: 4, fontSize: 10, color: "#1d8a4f" }}>Complete</span>}
+                                            {isActive && <span style={{ marginLeft: 4, fontSize: 10, color: "#0066cc" }}>In Progress</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -747,21 +758,37 @@ function MissionPanel({ missionState }: { missionState: MissionState }) {
                         <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
                             Current Mission
                         </div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0066cc", marginBottom: 6, lineHeight: 1.4 }}>
-                            M{idx + 1}: {MISSION_TITLES[idx]}
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0066cc", marginBottom: 8, lineHeight: 1.4 }}>
+                            Mission {idx + 1} of {totalMissions}
                         </div>
-                        <div style={{ fontSize: 11, color: "#5b6b81", fontWeight: 600, marginBottom: 6 }}>
-                            {MISSION_AGENTS[idx].join(", ")}
-                        </div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", marginBottom: 4 }}>Focus:</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            {MISSION_FOCUS_AREAS[idx].map((area, i) => (
-                                <div key={i} style={{ fontSize: 11, color: "#475569", display: "flex", gap: 5 }}>
-                                    <span style={{ color: "#0066cc", flexShrink: 0 }}>•</span>
-                                    {area}
+
+                        {/* Structured mission handoff */}
+                        {summary ? (
+                            <div style={{ marginBottom: 10 }}>
+                                <div style={{ padding: "7px 9px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0" }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: "#1d8a4f", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em" }}>Handoff</div>
+                                    <div style={{ fontSize: 11, color: "#166534", lineHeight: 1.55 }}>{summary.handoff}</div>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        ) : phase === "briefing" ? (
+                            <div style={{ marginBottom: 10, fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
+                                Talk to the CEO to receive your mission briefing.
+                            </div>
+                        ) : null}
+
+                        {assignedAgents.length > 0 && (
+                            <>
+                                <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", marginBottom: 4 }}>Assigned stakeholders:</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                    {assignedAgents.map((agent, i) => (
+                                        <div key={i} style={{ fontSize: 11, color: "#475569", display: "flex", gap: 5 }}>
+                                            <span style={{ color: "#0066cc", flexShrink: 0 }}>•</span>
+                                            {agent}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                         <div style={{ marginTop: 8, fontSize: 11, color: phase === "briefing" ? "#c05c00" : "#1d8a4f", fontWeight: 600 }}>
                             {phase === "briefing" ? "→ Get briefing from CEO" : "→ Report back to CEO when done"}
                         </div>
@@ -1022,7 +1049,7 @@ export default function SessionPage() {
                             }}
                         />
                     </div>
-                    <MissionPanel missionState={missionState} />
+                    <MissionPanel missionState={missionState} messages={messages} />
                 </div>
             )}
         </div>

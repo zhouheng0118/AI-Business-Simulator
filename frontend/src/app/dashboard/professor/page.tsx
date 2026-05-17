@@ -195,6 +195,18 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
+    async function handleDelete() {
+        setDeleting(true);
+        setDeleteError(null);
+        try {
+            await api.cases.delete(data.id);
+            onDeleted(data.id);
+        } catch (e) {
+            setDeleteError(e instanceof Error ? e.message : "Delete failed");
+            setDeleting(false);
+        }
+    }
+
     const submissionPct = stats.sessions_total > 0
         ? Math.round((stats.sessions_submitted / stats.sessions_total) * 100)
         : 0;
@@ -331,6 +343,33 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
                         onClick={() => setConfirm(true)}
                     >Delete</button>
                 </div>
+
+                {confirmDelete && (
+                    <div style={{ background: "#fff7f7", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "14px 16px", marginTop: 4 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#b91c1c", marginBottom: 10 }}>
+                            Delete &ldquo;{data.title}&rdquo;? This cannot be undone.
+                        </div>
+                        {deleteError && (
+                            <div style={{ fontSize: 12, color: "#b91c1c", marginBottom: 8 }}>{deleteError}</div>
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                                disabled={deleting}
+                                onClick={handleDelete}
+                                style={{ flex: 1, padding: "6px 0", borderRadius: 7, fontSize: 13, fontWeight: 700, background: "#b91c1c", color: "#fff", border: "none", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}
+                            >
+                                {deleting ? "Deleting…" : "Yes, delete"}
+                            </button>
+                            <button
+                                disabled={deleting}
+                                onClick={() => { setConfirm(false); setDeleteError(null); }}
+                                style={{ flex: 1, padding: "6px 0", borderRadius: 7, fontSize: 13, fontWeight: 600, background: "#fff", color: "#374151", border: "1.5px solid #d1d5db", cursor: "pointer" }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                         <span style={{ fontSize: 16, fontWeight: 600, color: "#2563eb" }}>
