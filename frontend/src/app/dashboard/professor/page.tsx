@@ -66,7 +66,7 @@ export default function ProfessorDashboard() {
             label: "Simulations",
             items: [
                 { icon: <IconGrid />,  label: "My Simulations", active: true },
-                { icon: <IconUsers />, label: "Student Analytics" },
+                { icon: <IconUsers />, label: "Student Analytics", onClick: () => router.push("/dashboard/professor/analytics") },
             ],
             accentColor: "#b91c1c", // Wine-red accent for sidebar
         },
@@ -308,8 +308,8 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
                             fontFamily: "SF Pro Text, system-ui",
                             transition: "background 0.12s"
                         }}
-                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
-                    >View Analytics</button>
+                        onClick={() => router.push(`/dashboard/professor/analytics?caseId=${data.id}`)}
+                    >Analytics</button>
                     <button
                         style={{
                             flex: 1,

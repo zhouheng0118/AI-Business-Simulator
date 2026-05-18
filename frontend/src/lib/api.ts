@@ -205,6 +205,51 @@ export interface ApiReport {
     generated_at: string;
 }
 
+export interface ApiSubmission {
+    id: string;
+    session_id: string;
+    question_id: string;
+    question_type: string;
+    answer: string;
+    cited_evidence: ApiEvidence[];
+    alternatives_excluded?: string | null;
+    created_at: string;
+}
+
+export interface ApiStudentAnalyticsRow {
+    session_id: string;
+    student_id: string;
+    case_id: string;
+    case_title: string;
+    case_status: "draft" | "published";
+    status: ApiSession["status"];
+    started_at: string;
+    submitted_at: string | null;
+    generated_at: string | null;
+    roles_visited: string[];
+    roles_count: number;
+    evidence_count: number;
+    checklist_completed_count: number;
+    answers_count: number;
+    cited_evidence_count: number;
+    total_score: number | null;
+    total_max: number | null;
+    score_percent: number | null;
+    mission_phase: string | null;
+}
+
+export interface ApiStudentAnalytics {
+    overview: {
+        total_sessions: number;
+        submitted_sessions: number;
+        in_progress_sessions: number;
+        avg_score_percent: number | null;
+        avg_evidence_count: number;
+        avg_roles_count: number;
+    };
+    rows: ApiStudentAnalyticsRow[];
+}
+
 export interface ApiCaseStats {
     sessions_total: number;
     sessions_submitted: number;
@@ -264,6 +309,8 @@ export const api = {
             post<ApiReport>(`/sessions/${sessionId}/submit`, { answers }),
         getReport: (sessionId: string) =>
             get<ApiReport>(`/sessions/${sessionId}/report`),
+        getSubmissions: (sessionId: string) =>
+            get<{ submissions: ApiSubmission[] }>(`/sessions/${sessionId}/submissions`),
     },
     assignments: {
         byStudent: (studentId: string) =>
@@ -302,6 +349,10 @@ export const api = {
             playbookId: string,
             body: { roles?: ApiPlaybookRole[]; questions?: ApiQuestion[]; description?: string; teaching_goals?: string[] },
         ) => patch<{ status: string }>(`/cases/${caseId}/playbook/${playbookId}/content`, body),
+        studentAnalytics: (caseId?: string) =>
+            get<ApiStudentAnalytics>(
+                caseId ? `/cases/${caseId}/analytics/students` : "/cases/analytics/students",
+            ),
     },
 };
 

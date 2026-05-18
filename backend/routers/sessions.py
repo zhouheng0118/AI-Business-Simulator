@@ -172,6 +172,17 @@ def proceed_to_answering(session_id: str):
             status_code=400,
             detail=f"Cannot proceed from status '{session['status']}'",
         )
+    playbook = db.get_playbook_by_case(session["case_id"])
+    checklist_items = (playbook.get("checklist_items") or []) if playbook else []
+    completed = set(session.get("checklist_completed") or [])
+    mission_state = session.get("mission_state") or {}
+    checklist_complete = not checklist_items or len(completed) >= len(checklist_items)
+    mission_complete = mission_state.get("phase") == "complete"
+    if not mission_complete and not checklist_complete:
+        raise HTTPException(
+            status_code=400,
+            detail="Complete the mission objectives before moving to the answer phase.",
+        )
     db.update_session_status(session_id, "answering")
     return {"status": "answering"}
 

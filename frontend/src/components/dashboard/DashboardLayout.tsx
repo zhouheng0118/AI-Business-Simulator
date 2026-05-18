@@ -94,7 +94,7 @@ export default function DashboardLayout({
 
                 <nav style={{ flex: 1, padding: sidebarWide ? "10px 8px" : "10px 6px", display: "flex", flexDirection: "column", gap: 2 }}>
                     {navSections.map((section) => (
-                        <div key={section.label} style={{ borderLeft: section.accentColor ? `4px solid ${section.accentColor}` : undefined }}>
+                        <div key={section.label}>
                             <SbLabel hidden={compact}>{section.label}</SbLabel>
                             {section.items.map((item) => (
                                 <SbItem key={item.label} {...item} compact={compact} />

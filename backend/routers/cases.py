@@ -229,6 +229,19 @@ def get_case_stats(case_id: str):
     return db.get_case_stats(case_id)
 
 
+@router.get("/analytics/students")
+def get_all_student_analytics():
+    return db.get_student_analytics()
+
+
+@router.get("/{case_id}/analytics/students")
+def get_case_student_analytics(case_id: str):
+    case = db.get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return db.get_student_analytics(case_id)
+
+
 @router.get("/{case_id}")
 def get_case(case_id: str):
     case = db.get_case(case_id)
