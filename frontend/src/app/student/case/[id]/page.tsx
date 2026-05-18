@@ -313,7 +313,7 @@ export default function CaseDetailPage() {
 
         setStarting(true);
         try {
-            const newSession = await api.sessions.create(caseId, user.id);
+            const newSession = await api.sessions.create(caseId, user.id, user.fullName);
             router.push(`/student/session/${newSession.id}`);
         } catch {
             setError("Failed to start session. Please try again.");

@@ -219,6 +219,7 @@ export interface ApiSubmission {
 export interface ApiStudentAnalyticsRow {
     session_id: string;
     student_id: string;
+    student_name: string | null;
     case_id: string;
     case_title: string;
     case_status: "draft" | "published";
@@ -293,8 +294,8 @@ export const api = {
     sessions: {
         byStudent: (studentId: string) =>
             get<ApiSession[]>(`/sessions/by-student/${studentId}`),
-        create: (caseId: string, studentId: string) =>
-            post<ApiSession>("/sessions", { case_id: caseId, student_id: studentId }),
+        create: (caseId: string, studentId: string, studentName?: string) =>
+            post<ApiSession>("/sessions", { case_id: caseId, student_id: studentId, student_name: studentName }),
         get: (sessionId: string) =>
             get<ApiSession>(`/sessions/${sessionId}`),
         getMessages: (sessionId: string) =>

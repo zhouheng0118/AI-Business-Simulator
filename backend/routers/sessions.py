@@ -22,6 +22,7 @@ def get_sessions_by_student(student_id: str):
 class CreateSessionIn(BaseModel):
     case_id: str
     student_id: str
+    student_name: str | None = None
 
 
 class SendMessageIn(BaseModel):
@@ -43,7 +44,7 @@ class SubmitAnswersIn(BaseModel):
 
 @router.post("")
 def create_session(body: CreateSessionIn):
-    return db.create_session(body.case_id, body.student_id)
+    return db.create_session(body.case_id, body.student_id, body.student_name)
 
 
 @router.get("/{session_id}")

@@ -154,7 +154,7 @@ def save_message(
     )
 
 
-def create_session(case_id: str, student_id: str) -> dict:
+def create_session(case_id: str, student_id: str, student_name: str | None = None) -> dict:
     from agents.missions import DEFAULT_MISSION_STATE
     row: dict = {
         "case_id": case_id,
@@ -163,23 +163,26 @@ def create_session(case_id: str, student_id: str) -> dict:
         "evidence_board": [],
         "interviewed_roles": [],
         "checklist_completed": [],
+        "follow_up_history": {},
         "mission_state": DEFAULT_MISSION_STATE,
     }
-    try:
-        # follow_up_history column may not exist if migration hasn't run yet
-        return (
-            _get_client().table("sessions")
-            .insert({**row, "follow_up_history": {}})
-            .execute()
-            .data[0]
-        )
-    except Exception:
-        return (
-            _get_client().table("sessions")
-            .insert(row)
-            .execute()
-            .data[0]
-        )
+    if student_name:
+        try:
+            # student_name column may not exist if migration hasn't run yet
+            return (
+                _get_client().table("sessions")
+                .insert({**row, "student_name": student_name})
+                .execute()
+                .data[0]
+            )
+        except Exception:
+            pass
+    return (
+        _get_client().table("sessions")
+        .insert(row)
+        .execute()
+        .data[0]
+    )
 
 
 def update_follow_up_history(session_id: str, new_history: dict) -> None:
@@ -692,6 +695,7 @@ def get_student_analytics(case_id: str | None = None) -> dict:
             {
                 "session_id": session["id"],
                 "student_id": session.get("student_id"),
+                "student_name": session.get("student_name"),
                 "case_id": session.get("case_id"),
                 "case_title": case.get("title", "Untitled Case"),
                 "case_status": case.get("status", "draft"),

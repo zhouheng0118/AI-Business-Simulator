@@ -146,7 +146,7 @@ function AnalyticsRow({ row }: { row: ApiStudentAnalyticsRow }) {
     const scoreColor = row.score_percent === null ? "#94a3b8" : row.score_percent >= 80 ? "#15803d" : row.score_percent >= 65 ? "#d97706" : "#b91c1c";
     return (
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.6fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr", gap: 12, padding: "13px 14px", borderBottom: "1px solid #f1f5f9", alignItems: "center", fontSize: 13 }}>
-            <span style={{ fontWeight: 700, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.student_id}</span>
+            <span style={{ fontWeight: 700, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.student_name || row.student_id}</span>
             <span style={{ color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.case_title}</span>
             <span style={{ color: row.status === "scored" ? "#15803d" : "#475569", fontWeight: 600 }}>{statusLabel(row.status)}</span>
             <span style={{ color: scoreColor, fontWeight: 800 }}>{pct(row.score_percent)}</span>

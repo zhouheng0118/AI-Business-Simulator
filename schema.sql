@@ -65,6 +65,7 @@ CREATE TABLE sessions (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id          UUID NOT NULL REFERENCES cases(id),
   student_id       TEXT NOT NULL,
+  student_name     TEXT,
   status           TEXT CHECK (status IN ('in_progress','answering','submitted','scored')) DEFAULT 'in_progress',
   evidence_board   JSONB DEFAULT '[]',
   -- [{source, key_info, data, risk, visible}]
