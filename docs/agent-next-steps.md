@@ -1,4 +1,4 @@
-# CaseIQ Agent Development Plan
+# BizSimAI Agent Development Plan
 
 Last updated: 2026-05-12
 Owner: Agent lead
@@ -81,7 +81,7 @@ Important security note:
 
 ## 2. Product Direction
 
-CaseIQ should not behave like a generic chatbot. The Agent should create a business-school simulation where students are assessed on investigation quality, not just final answers.
+BizSimAI should not behave like a generic chatbot. The Agent should create a business-school simulation where students are assessed on investigation quality, not just final answers.
 
 The Agent system has four responsibilities:
 

@@ -1,4 +1,4 @@
-# CaseIQ — AI Business Decision Simulation Platform
+# BizSimAI — AI Business Decision Simulation Platform
 
 An AI-powered business simulation platform for business school education. Professors upload case materials; the platform generates an interactive simulation playbook. Students interview AI stakeholders under CEO direction, collect evidence, complete five sequential missions, and receive a scored debrief report.
 
@@ -6,7 +6,7 @@ An AI-powered business simulation platform for business school education. Profes
 
 ## Table of Contents
 
-- [CaseIQ — AI Business Decision Simulation Platform](#caseiq--ai-business-decision-simulation-platform)
+- [BizSimAI — AI Business Decision Simulation Platform](#caseiq--ai-business-decision-simulation-platform)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Features](#features)
@@ -48,7 +48,7 @@ An AI-powered business simulation platform for business school education. Profes
 
 ## Overview
 
-CaseIQ transforms traditional business school case teaching into interactive AI simulations.
+BizSimAI transforms traditional business school case teaching into interactive AI simulations.
 
 **For professors**: Upload text, PDF, or Excel case materials. The platform extracts content and generates a complete playbook with stakeholder roles, information boundaries, mission tasks, final questions, and scoring dimensions. Professors review and edit the playbook before publishing.
 

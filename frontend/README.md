@@ -1,6 +1,6 @@
-# CaseIQ Frontend
+# BizSimAI Frontend
 
-Next.js 14 App Router frontend for the CaseIQ business-school simulation.
+Next.js 14 App Router frontend for the BizSimAI business-school simulation.
 
 For full-stack setup, database setup, backend environment variables, and the complete API reference, use the root [`README.md`](../README.md). This file only covers frontend-specific development notes.
 

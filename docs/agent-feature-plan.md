@@ -1,4 +1,4 @@
-# CaseIQ Agent Feature Plan
+# BizSimAI Agent Feature Plan
 
 Last updated: 2026-05-12
 
