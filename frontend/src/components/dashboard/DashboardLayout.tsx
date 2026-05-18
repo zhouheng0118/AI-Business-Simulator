@@ -47,7 +47,7 @@ export default function DashboardLayout({
                 onMouseEnter={() => setSidebarWide(true)}
                 onMouseLeave={() => setSidebarWide(false)}
                 style={{
-                    width: sidebarWide ? 220 : 56,
+                    width: sidebarWide ? 260 : 56,
                     flexShrink: 0,
                     background: "#ffffff",
                     borderRight: "1px solid #e0e0e0",
