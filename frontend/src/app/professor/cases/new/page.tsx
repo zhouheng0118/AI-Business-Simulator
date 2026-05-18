@@ -336,10 +336,10 @@ export default function NewCasePage() {
                     display: "grid",
                     gridTemplateColumns: "minmax(0, 60%) minmax(360px, 40%)",
                     gap: 22,
-                    alignItems: "start",
+                    alignItems: "stretch",
                 }}
             >
-                <section>
+                <section style={{ display: "flex", flexDirection: "column" }}>
                     {error && (
                         <div
                             style={{
@@ -379,7 +379,7 @@ export default function NewCasePage() {
                         </div>
                     )}
 
-                    <div style={{ background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 22px", marginBottom: 16 }}>
+                    <div style={{ flex: 1, background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 22px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: "#991b1b", background: "#fff5f5", border: "1px solid #fecaca", borderRadius: 999, padding: "3px 9px" }}>1 Case Details</span>
                             <span style={{ color: "#b0b0b0", fontSize: 11 }}>→</span>
@@ -540,8 +540,8 @@ export default function NewCasePage() {
                     {/* Duplicate Teaching Goals section removed */}
                 </section>
 
-                <aside style={{ position: "sticky", top: 66, height: "calc(100vh - 80px)", display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "16px", overflowY: "auto" }}>
+                <aside style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+                    <div style={{ flex: "0 1 auto", maxHeight: "calc(100% - 96px)", minHeight: 0, background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "16px", overflowY: "auto" }}>
                         <div style={{ display: "flex", gap: 6, marginBottom: 12, background: "#f8fafc", borderRadius: 8, padding: 4 }}>
                             <button
                                 type="button"
@@ -790,7 +790,7 @@ export default function NewCasePage() {
                         </div>
                     </div>
 
-                    <div style={{ marginTop: "auto", background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: 12 }} title={tooltipText}>
+                    <div style={{ marginTop: "auto", flex: "0 0 auto", background: "#fff", border: "1px solid #e0e0e0", borderRadius: 12, padding: 12 }} title={tooltipText}>
                         <button
                             onClick={handleGenerate}
                             disabled={!canGenerate || generating}
