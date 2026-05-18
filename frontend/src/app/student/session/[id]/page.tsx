@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getCurrentUser, User } from "@/lib/auth";
 import {
-    api, ApiCaseDetail, ApiPlaybookRole, ApiMessage, ApiChecklistItem,
+    api, ApiCaseDetail, ApiPlaybookRole, ApiMessage, ApiEvidence, ApiChecklistItem,
     MissionState, DEFAULT_MISSION_STATE,
 } from "@/lib/api";
 
@@ -32,9 +32,24 @@ function rc(name: string) {
     return ROLE_COLORS[name] ?? { bg: "#f5f5f7", border: "#e0e0e0", dot: "#7a7a7a", accent: "#7a7a7a" };
 }
 
+const AGENT_ICONS: Record<string, string> = {
+    "CEO":                     "/agent-icons/CEO.jpg",
+    "CFO":                     "/agent-icons/CFO.jpg",
+    "Operations Director":     "/agent-icons/Operation_director.jpg",
+    "Head of Operations":      "/agent-icons/Operation_director.jpg",
+    "Customer Representative": "/agent-icons/Customer_representative.jpg",
+    "Customer Rep":            "/agent-icons/Customer_representative.jpg",
+    "Local Expert":            "/agent-icons/Local_expert.jpg",
+};
+
 function roleRequestValue(role: ApiPlaybookRole | undefined): string {
     return role?.role_type || role?.name || "";
 }
+
+function hasSufficientEvidence(rolesVisited: string[], evidence: ApiEvidence[]): boolean {
+    return rolesVisited.length >= 3 && evidence.length >= 3;
+}
+
 
 function TopBar({ caseName, rolesVisited, total, missionPhase, sessionStatus, onProceed, onBack }: {
     caseName: string;
@@ -158,8 +173,8 @@ function RoleItem({ role, active, visited, locked, onSelect }: {
             style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid transparent", borderLeft: `3px solid ${active && !locked ? "#0066cc" : "transparent"}`, background: rowBg, cursor: locked ? "default" : "pointer", textAlign: "left", fontFamily: "SF Pro Text, system-ui", transition: "all 0.12s", marginBottom: 2, opacity: locked ? 0.45 : 1 }}
         >
             <div style={{ width: 30, height: 30, position: "relative", flexShrink: 0 }}>
-                <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: locked ? "#b0b0b0" : c.accent, opacity: active && !locked ? 1 : 0.7, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", transition: "opacity 0.12s" }}>
-                    {locked ? "🔒" : role.name.charAt(0)}
+                <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: locked ? "#b0b0b0" : c.accent, opacity: active && !locked ? 1 : 0.7, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", transition: "opacity 0.12s", overflow: "hidden" }}>
+                    {locked ? "🔒" : AGENT_ICONS[role.name] ? <img src={AGENT_ICONS[role.name]} alt={role.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : role.name.charAt(0)}
                 </div>
                 {!locked && (
                     <div
@@ -218,6 +233,7 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
     hideStartActions?: boolean;
     isCeo?: boolean;
 }) {
+    const [hoveredQ, setHoveredQ] = useState<number | null>(null);
     const [hoveredTopic, setHoveredTopic] = useState<number | null>(null);
     const c = rc(role.name);
     const roleDesc = role.opening_role_description || role.focus_area || "";
@@ -247,7 +263,9 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
             )}
             {/* Hero区内容 */}
             <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "28px 32px 10px 28px" }}>
-                <div style={{ width: 56, height: 56, borderRadius: "50%", background: c.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: "#fff", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,102,204,0.10)" }}>{role.name.charAt(0)}</div>
+                <div style={{ width: 56, height: 56, borderRadius: "50%", background: c.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: "#fff", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,102,204,0.10)", overflow: "hidden" }}>
+                    {AGENT_ICONS[role.name] ? <img src={AGENT_ICONS[role.name]} alt={role.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : role.name.charAt(0)}
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                     <div style={{ fontSize: 22, fontWeight: 800, color: c.accent, fontFamily: "SF Pro Display, system-ui", letterSpacing: "-0.5px" }}>{role.name} Agent</div>
                     <div style={{ fontSize: 15, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{role.title}</div>
@@ -304,7 +322,7 @@ function OpeningCard({ role, onSuggestedQuestion, onClose, onTopicClick, onStart
                 </div>
             )}
             {/* 主操作按钮 */}
-            {onStart && !hideStartActions && (
+            {onStart && !hideStartActions && isCeo && (
                 <div style={{ padding: "0 32px 24px 28px", marginTop: 28, display: "flex", justifyContent: "flex-end" }}>
                     <button
                         onClick={onStart}
@@ -341,7 +359,7 @@ function ChatWindow({ messages, selectedRole, sending, role, roles, onSelectRole
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages.length, sending]);
+    }, [messages.length, sending, selectedRole]);
 
     if (!selectedRole) {
         return (
@@ -378,9 +396,12 @@ function ChatWindow({ messages, selectedRole, sending, role, roles, onSelectRole
 
     // OpeningCard 交互适配
     const handleSuggested = (q: string, send?: boolean) => {
-        if (send && sendSuggested) sendSuggested(q);
-        else if (setInputText) setInputText(q);
-        onSuggestedQuestion?.(q, send);
+        if (send && sendSuggested) {
+            sendSuggested(q);
+        } else {
+            if (setInputText) setInputText(q);
+            onSuggestedQuestion?.(q, send);
+        }
     };
     const handleTopicClick = (topic: string) => {
         if (setInputText) setInputText(topic);
@@ -472,8 +493,8 @@ function ChatBubble({ msg, roleName }: { msg: ApiMessage; roleName: string }) {
 
     return (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {roleName.charAt(0)}
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                {AGENT_ICONS[roleName] ? <img src={AGENT_ICONS[roleName]} alt={roleName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : roleName.charAt(0)}
             </div>
             <div style={{ maxWidth: "76%", background: "#ffffff", border: `1px solid ${c.border}`, borderRadius: "12px 12px 12px 4px", padding: "9px 12px", boxShadow: "0 2px 10px rgba(15,23,42,0.06)" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: c.accent, marginBottom: 5, letterSpacing: "0.01em" }}>
@@ -491,8 +512,8 @@ function TypingIndicator({ roleName }: { roleName: string }) {
     const c = rc(roleName);
     return (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {roleName.charAt(0)}
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: c.accent, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                {AGENT_ICONS[roleName] ? <img src={AGENT_ICONS[roleName]} alt={roleName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : roleName.charAt(0)}
             </div>
             <div style={{ background: "#ffffff", border: `1px solid ${c.border}`, borderRadius: "12px 12px 12px 4px", padding: "9px 12px", boxShadow: "0 2px 10px rgba(15,23,42,0.06)" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: c.accent, marginBottom: 5, letterSpacing: "0.01em" }}>
@@ -534,8 +555,6 @@ function CheckIcon({ done, isNew }: { done: boolean; isNew: boolean }) {
     );
 }
 
-// Retained for the checklist-based UI variant; the current flow renders MissionPanel instead.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function SummaryPanel({ checklistItems, checklistCompleted, newlyCheckedItems, teachingGoals, roles, rolesVisited }: {
     checklistItems: ApiChecklistItem[];
     checklistCompleted: number[];
@@ -707,10 +726,6 @@ function MissionPanel({ missionState, messages }: { missionState: MissionState; 
     const completed = new Set(missionState.missions_completed);
     const totalMissions = MISSION_COUNT;
 
-    const assignedAgents = missionState.active_agents.filter(
-        (a) => !/^ceo$/i.test(a)
-    );
-
     // Prefer backend-extracted summary; fall back to parsing the last CEO message
     const backendSummary = missionState.mission_summaries?.[String(idx)];
     const lastCeoMsg = [...messages].reverse().find(
@@ -779,19 +794,6 @@ function MissionPanel({ missionState, messages }: { missionState: MissionState; 
                             </div>
                         ) : null}
 
-                        {assignedAgents.length > 0 && (
-                            <>
-                                <div style={{ fontSize: 10, fontWeight: 600, color: "#7a7a7a", marginBottom: 4 }}>Assigned stakeholders:</div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                                    {assignedAgents.map((agent, i) => (
-                                        <div key={i} style={{ fontSize: 11, color: "#475569", display: "flex", gap: 5 }}>
-                                            <span style={{ color: "#0066cc", flexShrink: 0 }}>•</span>
-                                            {agent}
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        )}
                         <div style={{ marginTop: 8, fontSize: 11, color: phase === "briefing" ? "#c05c00" : "#1d8a4f", fontWeight: 600 }}>
                             {phase === "briefing" ? "→ Get briefing from CEO" : "→ Report back to CEO when done"}
                         </div>
@@ -828,17 +830,6 @@ function InputArea({ value, onChange, onSend, sending, disabled, missionPhase, s
 
     return (
         <div style={{ borderTop: "1px solid #e0e0e0", padding: "10px 14px", background: "#ffffff", flexShrink: 0 }}>
-            {showReportCta && (
-                <div style={{ marginBottom: 8, border: "1px solid #cfe0ff", background: "#eef5ff", borderRadius: 9, padding: "7px 10px", fontSize: 12, lineHeight: 1.45, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <span style={{ color: "#1e3a8a" }}>Mission in progress — report your findings to CEO when ready.</span>
-                    <button
-                        onClick={onReportToCeo}
-                        style={{ border: "none", borderRadius: 7, background: "#0066cc", color: "#fff", padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
-                    >
-                        → Report to CEO
-                    </button>
-                </div>
-            )}
             {disabled && (
                 <div style={{ marginBottom: 8, border: "1px solid #cfe0ff", background: "#eef5ff", color: "#1e3a8a", borderRadius: 9, padding: "7px 10px", fontSize: 12, lineHeight: 1.45, display: "flex", alignItems: "center", gap: 7 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -884,6 +875,10 @@ export default function SessionPage() {
     const [caseId, setCaseId]           = useState<string>("");
     const [sessionStatus, setStatus]    = useState<string>("in_progress");
     const [messages, setMessages]       = useState<ApiMessage[]>([]);
+    const [evidence, setEvidence]       = useState<ApiEvidence[]>([]);
+    const [checklistItems, setChecklistItems]           = useState<ApiChecklistItem[]>([]);
+    const [checklistCompleted, setChecklistCompleted]   = useState<number[]>([]);
+    const [newlyCheckedItems, setNewlyCheckedItems]     = useState<Set<number>>(new Set());
     const [rolesVisited, setRolesVisited] = useState<string[]>([]);
     const [missionState, setMissionState] = useState<MissionState>(DEFAULT_MISSION_STATE);
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -892,6 +887,8 @@ export default function SessionPage() {
     const [sending, setSending]           = useState(false);
     const [loading, setLoading]           = useState(true);
     const [error, setError]               = useState<string | null>(null);
+    const infoSufficient = missionState.phase === "complete";
+
     useEffect(() => {
         const u = getCurrentUser();
         if (!u) { router.push("/login"); return; }
@@ -901,11 +898,15 @@ export default function SessionPage() {
         Promise.all([
             api.sessions.get(sessionId),
             api.sessions.getMessages(sessionId),
+            api.sessions.getEvidence(sessionId),
         ])
-            .then(async ([session, msgs]) => {
+            .then(async ([session, msgs, ev]) => {
                 setStatus(session.status);
                 setRolesVisited(session.interviewed_roles);
                 setMessages(msgs);
+                setEvidence(ev.evidence_board);
+                setChecklistItems(ev.checklist_items ?? []);
+                setChecklistCompleted(ev.checklist_completed ?? []);
                 if (session.mission_state) {
                     setMissionState(session.mission_state);
                 }
@@ -917,9 +918,9 @@ export default function SessionPage() {
             .finally(() => setLoading(false));
     }, [sessionId, router]);
 
-    const handleSend = useCallback(async () => {
-        if (!selectedRole || !inputText.trim() || sending) return;
-        const text = inputText.trim();
+    const handleSend = useCallback(async (overrideText?: string) => {
+        const text = (overrideText !== undefined ? overrideText : inputText).trim();
+        if (!selectedRole || !text || sending) return;
         const activeRole = caseDetail?.playbook?.roles?.find((role) => role.name === selectedRole);
         const roleName = roleRequestValue(activeRole) || selectedRole;
         setInputText("");
@@ -933,10 +934,18 @@ export default function SessionPage() {
 
         try {
             const res = await api.sessions.sendMessage(sessionId, roleName, text);
+            const evidenceResult = await api.sessions.getEvidence(sessionId);
             setMessages((prev) => [...prev, {
                 id: `agent-${Date.now()}`, session_id: sessionId, role: "agent",
                 agent_name: res.agent_name, content: res.reply, created_at: new Date().toISOString(),
             }]);
+            const allEvidence = evidenceResult.evidence_board;
+            setEvidence(allEvidence);
+            setChecklistCompleted(res.checklist_completed ?? evidenceResult.checklist_completed ?? []);
+            if ((res.newly_checked_items ?? []).length > 0) {
+                setNewlyCheckedItems(new Set(res.newly_checked_items));
+                setTimeout(() => setNewlyCheckedItems(new Set()), 3000);
+            }
             setRolesVisited(res.roles_visited);
             if (res.mission_state) {
                 setMissionState(res.mission_state);
@@ -951,8 +960,8 @@ export default function SessionPage() {
 
     // 一键发送推荐问题
     const sendSuggested = async (q: string) => {
-        setInputText(q);
-        setTimeout(() => handleSend(), 0);
+        setInputText("");
+        await handleSend(q);
     };
 
     async function handleProceed() {

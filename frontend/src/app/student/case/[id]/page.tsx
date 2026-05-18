@@ -127,10 +127,21 @@ function SectionCard({
     );
 }
 
+const AGENT_ICONS: Record<string, string> = {
+    "CEO":                     "/agent-icons/CEO.jpg",
+    "CFO":                     "/agent-icons/CFO.jpg",
+    "Operations Director":     "/agent-icons/Operation_director.jpg",
+    "Head of Operations":      "/agent-icons/Operation_director.jpg",
+    "Customer Representative": "/agent-icons/Customer_representative.jpg",
+    "Customer Rep":            "/agent-icons/Customer_representative.jpg",
+    "Local Expert":            "/agent-icons/Local_expert.jpg",
+};
+
 function RoleCard({ role }: { role: ApiPlaybookRole }) {
     const c = roleColor(role.name);
     const [hovered, setHovered] = useState(false);
     const initial = role.name.trim().charAt(0).toUpperCase();
+    const iconSrc = AGENT_ICONS[role.name];
     return (
         <div
             onMouseEnter={() => setHovered(true)}
@@ -152,8 +163,8 @@ function RoleCard({ role }: { role: ApiPlaybookRole }) {
                 <div
                     aria-hidden
                     style={{
-                        width: 20,
-                        height: 20,
+                        width: 28,
+                        height: 28,
                         borderRadius: "50%",
                         background: c.dot,
                         color: "#ffffff",
@@ -163,9 +174,12 @@ function RoleCard({ role }: { role: ApiPlaybookRole }) {
                         alignItems: "center",
                         justifyContent: "center",
                         flexShrink: 0,
+                        overflow: "hidden",
                     }}
                 >
-                    {initial}
+                    {iconSrc
+                        ? <img src={iconSrc} alt={role.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        : initial}
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f" }}>{role.name}</span>
             </div>

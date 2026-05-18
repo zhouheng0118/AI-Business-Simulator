@@ -220,8 +220,8 @@ export default function StudentDashboard() {
             label: "Learning",
             items: [
                 { icon: <IconGrid />,   label: "Case Library",    active: true },
-                { icon: <IconChart />,  label: "My Progress", onClick: () => router.push("/dashboard/student/progress") },
-                { icon: <IconReport />, label: "Debrief Reports", onClick: () => router.push("/dashboard/student/reports") },
+                { icon: <IconChart />,  label: "My Progress" },
+                { icon: <IconReport />, label: "Debrief Reports" },
             ],
         },
     ];
@@ -427,9 +427,9 @@ function CaseCard({ data }: { data: DisplayCase }) {
                 aria-hidden
                 style={{
                     flexShrink: 0,
-                    minHeight: 88,
-                    maxHeight: 96,
-                    height: "clamp(88px, 22vw, 96px)",
+                    minHeight: 72,
+                    maxHeight: 72,
+                    height: 72,
                     width: "100%",
                     background: topGrad,
                     position: "relative",
@@ -537,7 +537,7 @@ function CaseCard({ data }: { data: DisplayCase }) {
                 </span>
             </div>
 
-            <div style={{ fontSize: "clamp(20px, 2.1vw, 22px)", fontWeight: 800, color: "#111827", marginBottom: data.descriptionPreview ? 8 : 12, lineHeight: 1.18, letterSpacing: "-0.35px", overflowWrap: "anywhere", wordBreak: "break-word", hyphens: "auto" }}>
+            <div style={{ fontSize: "clamp(20px, 2.1vw, 22px)", fontWeight: 800, color: "#111827", marginBottom: data.descriptionPreview ? 8 : 12, lineHeight: 1.18, letterSpacing: "-0.35px", overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical" as const, WebkitLineClamp: 2, lineClamp: 2, minHeight: "calc(1.18em * 2)" }}>
                 {data.title}
             </div>
 
@@ -566,19 +566,10 @@ function CaseCard({ data }: { data: DisplayCase }) {
                         fontWeight: 500,
                         color: data.dueAt ? "#86868b" : "#c7c7cc",
                         lineHeight: 1.35,
-                        marginBottom: data.tagLabels.length > 0 ? 8 : 0,
                     }}
                 >
                     {data.dueAt ? `Due ${formatDue(data.dueAt)}` : "No due date"}
                 </div>
-
-                {data.tagLabels.length > 0 ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                        {data.tagLabels.map((label, i) => (
-                            <Tag key={`${data.id}-tag-${i}`}>{label}</Tag>
-                        ))}
-                    </div>
-                ) : null}
             </div>
             </div>
 

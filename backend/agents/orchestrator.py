@@ -869,9 +869,9 @@ def _build_ceo_orchestrator_prompt(
             if not active_sources or e.get("source") in active_sources
         ]
         if not relevant_evidence:
-            relevant_evidence = list(evidence_board or [])[:15]
+            relevant_evidence = list(evidence_board or [])[:50]
         else:
-            relevant_evidence = relevant_evidence[:15]
+            relevant_evidence = relevant_evidence[:50]
 
         if relevant_evidence:
             evidence_text = "\n".join(
@@ -891,17 +891,18 @@ def _build_ceo_orchestrator_prompt(
             "Look at your previous briefing in the conversation history — that is what you asked for. "
             "Evaluate whether the student's report covers it AND whether the specific "
             "facts/numbers they cite are actually supported by the evidence they collected.\n\n"
-            f"Evidence the student actually collected from interviews:\n{evidence_text}\n\n"
-            "Fact-check rules (apply strictly):\n"
-            "- If the report cites a specific number, percentage, or named fact that does NOT "
-            "appear in the evidence above, mark INCOMPLETE and tell them to recheck with the stakeholder.\n"
+            f"Evidence the student actually collected from interviews (compressed summary — not every figure is captured verbatim):\n{evidence_text}\n\n"
+            "Fact-check rules:\n"
+            "- The evidence above is a compressed summary of interview notes. Exact wording may differ from what stakeholders said.\n"
+            "- Accept a cited fact/number if it is consistent with or plausibly derived from the evidence above OR is a well-known figure from the case context.\n"
+            "- Only mark a figure as unsupported if it contradicts the evidence, is clearly invented (e.g. a number that conflicts with what a stakeholder said), or if NO evidence at all was collected from the relevant stakeholder.\n"
             "- If the report makes confident claims but no relevant evidence was collected, mark INCOMPLETE.\n"
-            "- Vague qualitative statements consistent with the evidence are acceptable.\n\n"
-            "If COMPLETE (report covers the briefing AND cited facts are grounded in evidence):\n"
+            "- Vague qualitative statements consistent with the evidence are always acceptable.\n\n"
+            "If COMPLETE (report covers the briefing AND cited facts are plausibly grounded in evidence):\n"
             "  - Confirm what they got right (1 sentence).\n"
             f"  - {next_assignment}\n\n"
-            "If INCOMPLETE (missing coverage OR fabricated/unsupported numbers):\n"
-            "  - Name exactly what is missing or which figure is unsupported.\n"
+            "If INCOMPLETE (missing coverage OR figures that directly contradict or are entirely absent from the stakeholder record):\n"
+            "  - Name exactly what is missing or which figure cannot be reconciled with any interview.\n"
             "  - Tell them which stakeholder to go back to and what to ask.\n"
             "  - End with: <mission_verdict>INCOMPLETE</mission_verdict>\n\n"
             f"Case context:\n{case_excerpt}\n\n"
@@ -910,11 +911,23 @@ def _build_ceo_orchestrator_prompt(
         )
 
     else:  # REDIRECTING
+        mission_summaries = mission_state.get("mission_summaries") or {}
+        current_summary = mission_summaries.get(str(current_idx)) or {}
+        if current_summary.get("task") or current_summary.get("handoff"):
+            task_line = current_summary.get("task", "")
+            handoff_line = current_summary.get("handoff", "")
+            summary_hint = (
+                f"Current mission task: {task_line}\n"
+                f"Required deliverable: {handoff_line}\n\n"
+            )
+        else:
+            summary_hint = ""
         mode_block = (
-            "The student sent you a message while they are still on an active mission. "
-            "Look at your previous briefing in the conversation history. "
-            "Briefly remind them of what they still need to collect and bring back. "
-            "Maximum 2 sentences. Do not ask a question."
+            "The student sent you a message while they are still on an active mission.\n\n"
+            f"{summary_hint}"
+            "Remind them in 1-2 sentences exactly what they still need to collect and bring back. "
+            "Be specific — name the stakeholder(s) and the deliverable. "
+            "Do not ask a question."
         )
 
     return (
@@ -931,9 +944,13 @@ async def _extract_mission_brief(reply: str) -> dict:
     """Extract a one-sentence task and handoff from a CEO briefing message."""
     prompt = (
         f"CEO message: \"{reply[:800]}\"\n\n"
-        "From this CEO briefing, extract:\n"
-        "1. task: one sentence describing what to investigate\n"
-        "2. handoff: one sentence describing what the student should bring back to the CEO\n\n"
+        "This message may contain evaluation of past work followed by a NEW mission assignment.\n"
+        "Ignore any praise, criticism, or feedback about previous work.\n"
+        "Focus only on the FORWARD-LOOKING assignment in this message.\n\n"
+        "Extract:\n"
+        "1. task: one sentence describing who to speak with and what to investigate\n"
+        "2. handoff: one sentence describing the specific deliverable the student must bring back\n"
+        "   (look for phrases like 'bring back', 'deliver', 'your deliverable is', 'return with')\n\n"
         "Reply with ONLY valid JSON: {\"task\": \"...\", \"handoff\": \"...\"}"
     )
     raw = await _llm(prompt, max_tokens=120)
@@ -1013,16 +1030,21 @@ async def handle_ceo_message(
 
     summaries = dict(new_mission_state.get("mission_summaries") or {})
 
+    all_role_names = [r["name"] for r in roles]
+
     if mode == "BRIEFING":
-        assigned, brief = await asyncio.gather(
-            _extract_active_roles(reply, roles),
-            _extract_mission_brief(reply),
-        )
-        new_mission_state["phase"] = "investigating"
-        new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + assigned))
-        if brief:
-            summaries[str(current_idx)] = brief
-            new_mission_state["mission_summaries"] = summaries
+        if reply == FALLBACK_REPLY:
+            # LLM failed — keep phase as "briefing" so the next message re-triggers
+            # a proper mission briefing rather than silently entering REDIRECTING mode.
+            pass
+        else:
+            brief = await _extract_mission_brief(reply)
+            new_mission_state["phase"] = "investigating"
+            new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + all_role_names))
+            # Only write the summary once — never overwrite an already-set handoff.
+            if brief and str(current_idx) not in summaries:
+                summaries[str(current_idx)] = brief
+                new_mission_state["mission_summaries"] = summaries
 
     elif mode == "EVALUATING" and verdict == "COMPLETE":
         completed = list(mission_state.get("missions_completed") or [])
@@ -1032,19 +1054,17 @@ async def handle_ceo_message(
         new_mission_state["missions_completed"] = completed
         if next_idx >= MISSION_COUNT:
             new_mission_state["phase"] = "complete"
-            new_mission_state["active_agents"] = ["CEO"]
+            new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + all_role_names))
         else:
-            # CEO already briefed next mission in this reply — extract assigned roles and brief
-            assigned, brief = await asyncio.gather(
-                _extract_active_roles(reply, roles),
-                _extract_mission_brief(reply),
-            )
             new_mission_state["current_mission"] = next_idx
             new_mission_state["phase"] = "investigating"
-            new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + assigned))
-            if brief:
-                summaries[str(next_idx)] = brief
-                new_mission_state["mission_summaries"] = summaries
+            new_mission_state["active_agents"] = list(dict.fromkeys(["CEO"] + all_role_names))
+            # Only extract and store the next mission's brief if not already set.
+            if str(next_idx) not in summaries:
+                brief = await _extract_mission_brief(reply)
+                if brief:
+                    summaries[str(next_idx)] = brief
+                    new_mission_state["mission_summaries"] = summaries
 
     if new_mission_state != mission_state:
         db.update_mission_state(session_id, new_mission_state)

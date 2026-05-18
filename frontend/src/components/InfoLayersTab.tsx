@@ -17,6 +17,14 @@ const LEVEL_BADGE: Record<1 | 2 | 3, { label: string; bg: string; color: string 
     3: { label: "L3", bg: "#fca5a5", color: "#7f1d1d" },
 };
 
+const ROLE_DOT: Record<string, string> = {
+    "CEO":                     "#0066cc",
+    "CFO":                     "#1d8a4f",
+    "Operations Director":     "#c05c00",
+    "Customer Representative": "#6b21a8",
+    "Local Expert":            "#0e7490",
+};
+
 const BASIC_CATEGORIES: { key: string; label: string; description: string }[] = [
     { key: "company_background", label: "Company Background",  description: "Who the company is, market, competitors" },
     { key: "decision_context",   label: "Decision Context",    description: "What decision is being made and why now" },
@@ -24,6 +32,10 @@ const BASIC_CATEGORIES: { key: string; label: string; description: string }[] = 
     { key: "visible_tension",    label: "Visible Tension",     description: "Acknowledged conflict or risk, no root cause" },
     { key: "public_numbers",     label: "Public Numbers",      description: "Revenue, pricing, headcount, market size" },
 ];
+
+function dot(name: string) {
+    return ROLE_DOT[name] ?? "#7a7a7a";
+}
 
 interface EditState {
     index: number;
@@ -146,6 +158,7 @@ export default function InfoLayersTab({ atoms, roles, saving, onSave }: Props) {
                 </div>
             )}
 
+            <div style={{ background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 12, padding: "20px 24px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(420px,1fr) 1px minmax(420px,1fr)", gap: 24, alignItems: "start" }}>
                 {/* ── LEFT: Basic Layer ── */}
                 <div>
@@ -285,6 +298,7 @@ export default function InfoLayersTab({ atoms, roles, saving, onSave }: Props) {
 
                     <AddButton label="+ Add hidden fact" onClick={() => openAdd("locked")} />
                 </div>
+            </div>
             </div>
 
             {editing && (

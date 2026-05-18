@@ -15,3 +15,6 @@ SUPABASE_SERVICE_KEY: str | None = os.getenv("SUPABASE_SERVICE_KEY")
 
 PROFESSOR_PASSCODE: str = os.getenv("PROFESSOR_PASSCODE", "prof-demo")
 STUDENT_PASSCODE: str = os.getenv("STUDENT_PASSCODE", "student-demo")
+
+# Set DEV_MODE=false to disable all developer-only routes and tooling.
+DEV_MODE: bool = os.getenv("DEV_MODE", "true").lower() == "true"

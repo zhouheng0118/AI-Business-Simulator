@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, logout, User } from "@/lib/auth";
-import { api, ApiCase, ApiCaseStats, difficultyLabel } from "@/lib/api";
+import { api, ApiCase, ApiCaseStats, difficultyLabel, formatDue } from "@/lib/api";
 import DashboardLayout, { NavSection, NavItem } from "@/components/dashboard/DashboardLayout";
 import {
-    Avatar, Badge,
+    Avatar, Badge, Tag, StatCard, ActionBtn,
     LoadingState, ErrorState, EmptyState,
     IconGrid, IconUsers, IconUser, IconSettings, IconLogout, IconPlus,
 } from "@/components/dashboard/shared";
@@ -66,7 +66,7 @@ export default function ProfessorDashboard() {
             label: "Simulations",
             items: [
                 { icon: <IconGrid />,  label: "My Simulations", active: true },
-                { icon: <IconUsers />, label: "Student Analytics", onClick: () => router.push("/dashboard/professor/analytics") },
+                { icon: <IconUsers />, label: "Student Analytics" },
             ],
             accentColor: "#b91c1c", // Wine-red accent for sidebar
         },
@@ -133,7 +133,7 @@ export default function ProfessorDashboard() {
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
         }}>
             <span style={{ fontSize: 16, fontWeight: 500, color: "#b91c1c" }}>
-                {published}/6 published · <span style={{ color: "#2563eb" }}>{totalStudents} students started</span> · Avg score: <span style={{ color: "#2563eb" }}>{avgScore !== null ? avgScore : "—"}</span>
+                <span style={{ color: "#b91c1c" }}>{published}</span><span style={{ color: "#1d1d1f" }}>/</span><span style={{ color: "#b91c1c" }}>6</span><span style={{ color: "#1d1d1f" }}> published · </span><span style={{ color: "#b91c1c" }}>{totalStudents}</span><span style={{ color: "#1d1d1f" }}> students started · Avg score: </span><span style={{ color: "#b91c1c" }}>{avgScore !== null ? avgScore : "—"}</span>
             </span>
             <div style={{ flex: 1, height: 6, background: "#e0e7ef", borderRadius: 3, overflow: "hidden" }}>
                 <div style={{ width: `${(published / 6) * 100}%`, height: "100%", background: "linear-gradient(90deg, #2563eb, #1e40af)" }} />
@@ -196,7 +196,6 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
     async function handleDelete() {
-        if (deleting) return;
         setDeleting(true);
         setDeleteError(null);
         try {
@@ -255,7 +254,7 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
             }}
         >
             <div style={{
-                height: 120,
+                height: 72,
                 background: "linear-gradient(120deg, #7f1d1d 0%, #b91c1c 60%, #1e3a8a 100%)",
                 position: "relative",
             }}>
@@ -288,7 +287,7 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
                         <Badge label={diffLabel} {...(diffBadge[diffLabel] ?? { bg: "#f1f5f9", color: "#64748b" })} />
                     </div>
 
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "#1d1d1f", marginBottom: 4 }}>
+                    <div style={{ fontSize: 23, fontWeight: 700, color: "#1d1d1f", marginBottom: 4 }}>
                         {data.title}
                     </div>
 
@@ -309,8 +308,8 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
                             fontFamily: "SF Pro Text, system-ui",
                             transition: "background 0.12s"
                         }}
-                        onClick={() => router.push(`/dashboard/professor/analytics?caseId=${data.id}`)}
-                    >Analytics</button>
+                        onClick={() => router.push(`/professor/cases/${data.id}/review`)}
+                    >View Analytics</button>
                     <button
                         style={{
                             flex: 1,
@@ -386,3 +385,4 @@ function SimCard({ data, stats, onDeleted }: { data: ApiCase; stats: ApiCaseStat
         </div>
     );
 }
+

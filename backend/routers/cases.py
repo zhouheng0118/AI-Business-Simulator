@@ -229,19 +229,6 @@ def get_case_stats(case_id: str):
     return db.get_case_stats(case_id)
 
 
-@router.get("/analytics/students")
-def get_all_student_analytics():
-    return db.get_student_analytics()
-
-
-@router.get("/{case_id}/analytics/students")
-def get_case_student_analytics(case_id: str):
-    case = db.get_case(case_id)
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-    return db.get_student_analytics(case_id)
-
-
 @router.get("/{case_id}")
 def get_case(case_id: str):
     case = db.get_case(case_id)
@@ -394,6 +381,38 @@ class InfoAtomItem(BaseModel):
 
 class UpdateInfoAtomsIn(BaseModel):
     info_atoms: list[InfoAtomItem]
+
+
+class UpdatePlaybookContentIn(BaseModel):
+    roles: list | None = None
+    questions: list | None = None
+    description: str | None = None
+    teaching_goals: list[str] | None = None
+
+
+@router.patch("/{case_id}/playbook/{playbook_id}/content")
+def update_playbook_content(case_id: str, playbook_id: str, body: UpdatePlaybookContentIn):
+    case = db.get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    playbook = db.get_playbook(playbook_id)
+    if not playbook or playbook["case_id"] != case_id:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    playbook_fields: dict = {}
+    if body.roles is not None:
+        playbook_fields["roles"] = body.roles
+    if body.questions is not None:
+        playbook_fields["questions"] = body.questions
+    if playbook_fields:
+        db.update_playbook_content(playbook_id, playbook_fields)
+    case_fields: dict = {}
+    if body.description is not None:
+        case_fields["description"] = body.description
+    if body.teaching_goals is not None:
+        case_fields["teaching_goals"] = body.teaching_goals
+    if case_fields:
+        db.update_case(case_id, case_fields)
+    return {"status": "updated"}
 
 
 @router.patch("/{case_id}/playbook/{playbook_id}/info-atoms")
