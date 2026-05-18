@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AI Business Decision Simulation",
   description: "Business Analytics Platform",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

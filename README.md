@@ -1,12 +1,16 @@
 # BizSimAI — AI Business Decision Simulation Platform
 
+<p align="center">
+  <img src="docs/assets/readme-hero.jpg" alt="BizSimAI multi-agent business simulation preview" width="100%" />
+</p>
+
 An AI-powered business simulation platform for business school education. Professors upload case materials; the platform generates an interactive simulation playbook. Students interview AI stakeholders under CEO direction, collect evidence, complete five sequential missions, and receive a scored debrief report.
 
 ---
 
 ## Table of Contents
 
-- [BizSimAI — AI Business Decision Simulation Platform](#caseiq--ai-business-decision-simulation-platform)
+- [BizSimAI — AI Business Decision Simulation Platform](#bizsimai--ai-business-decision-simulation-platform)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Features](#features)
