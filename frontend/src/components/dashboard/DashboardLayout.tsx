@@ -70,7 +70,7 @@ export default function DashboardLayout({
                     {sidebarWide ? (
                         <>
                             <div style={{ fontFamily: "SF Pro Display, system-ui", fontSize: 14, fontWeight: 600, color: "#1d1d1f", letterSpacing: "-0.14px", whiteSpace: "nowrap" }}>
-                                AI Business Simulator
+                                AI Business Decision Simulation
                             </div>
                             <div style={{ fontSize: 11, color: "#7a7a7a", marginTop: 3, whiteSpace: "nowrap" }}>{portalName}</div>
                         </>
@@ -85,7 +85,7 @@ export default function DashboardLayout({
                                 textAlign: "center",
                                 lineHeight: 1.2,
                             }}
-                            title={`AI Business Simulator — ${portalName}`}
+                            title={`AI Business Decision Simulation — ${portalName}`}
                         >
                             AI
                         </div>

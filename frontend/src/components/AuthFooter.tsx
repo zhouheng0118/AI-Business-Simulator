@@ -13,7 +13,7 @@ export default function AuthFooter() {
                     color: "#7a7a7a",
                 }}
             >
-                © 2026 AI Business Simulator
+                © 2026 AI Business Decision Simulation
                 <span className="mx-2">·</span>
                 <Link href="/privacy" style={{ color: "#7a7a7a" }} className="hover:text-ink hover:underline transition-colors">
                     Privacy Policy

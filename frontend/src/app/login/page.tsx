@@ -57,7 +57,7 @@ export default function LoginPage() {
                             color: "#1d1d1f",
                         }}
                     >
-                        AI Business Simulator
+                        AI Business Decision Simulation
                     </span>
                 </div>
 

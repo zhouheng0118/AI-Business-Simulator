@@ -76,7 +76,7 @@ export default function RegisterPage() {
                             color: "#1d1d1f",
                         }}
                     >
-                        AI Business Simulator
+                        AI Business Decision Simulation
                     </span>
                 </div>
 
@@ -108,7 +108,7 @@ export default function RegisterPage() {
                                 marginTop: "6px",
                             }}
                         >
-                            Join the AI Business Simulator platform.
+                            Join the AI Business Decision Simulation.
                         </p>
                     </div>
 

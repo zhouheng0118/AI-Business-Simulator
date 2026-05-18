@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Business Simulator",
+  title: "AI Business Decision Simulation",
   description: "Business Analytics Platform",
 };
 

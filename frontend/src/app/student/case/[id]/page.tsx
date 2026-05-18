@@ -56,7 +56,7 @@ function TopBar({ user, onBack }: { user: User; onBack: () => void }) {
                     Back to Dashboard
                 </button>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f", fontFamily: "SF Pro Display, system-ui" }}>
-                    AI Business Simulator
+                    AI Business Decision Simulation
                 </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

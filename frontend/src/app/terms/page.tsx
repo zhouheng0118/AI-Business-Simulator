@@ -42,7 +42,7 @@ export default function TermsPage() {
                 <div className="flex flex-col gap-8">
                     <Section title="1. Acceptance of Terms">
                         <p>
-                            By accessing or using AI Business Simulator, you agree to be bound by these Terms of
+                            By accessing or using AI Business Decision Simulation, you agree to be bound by these Terms of
                             Service. If you do not agree, you may not use the platform. Use is limited to students
                             and faculty of participating academic institutions.
                         </p>
@@ -63,7 +63,7 @@ export default function TermsPage() {
                     <Section title="3. Intellectual Property">
                         <p>
                             All case materials, simulation playbooks, and platform content are the property of the
-                            respective institution or AI Business Simulator. You may not reproduce or distribute
+                            respective institution or AI Business Decision Simulation. You may not reproduce or distribute
                             case content outside of the platform without written permission.
                         </p>
                     </Section>
@@ -71,7 +71,7 @@ export default function TermsPage() {
                     <Section title="4. Student Submissions">
                         <p>
                             Your submitted analyses and session data may be reviewed by your professor for grading
-                            purposes. By submitting, you grant AI Business Simulator a limited license to store and
+                            purposes. By submitting, you grant AI Business Decision Simulation a limited license to store and
                             process your submission for report generation and platform improvement.
                         </p>
                     </Section>
@@ -114,7 +114,7 @@ export default function TermsPage() {
                         color: "#7a7a7a",
                     }}
                 >
-                    © 2026 AI Business Simulator
+                    © 2026 AI Business Decision Simulation
                 </p>
             </footer>
         </div>

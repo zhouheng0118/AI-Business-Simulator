@@ -52,7 +52,7 @@ export default function PrivacyPage() {
                     <Section title="2. How We Use Your Information">
                         <p>We use your information to:</p>
                         <ul>
-                            <li>Provide and operate the AI Business Simulator platform.</li>
+                            <li>Provide and operate the AI Business Decision Simulation.</li>
                             <li>Generate personalized debrief reports and scoring based on your session activity.</li>
                             <li>Allow professors to review student performance and decision-making processes.</li>
                             <li>Improve simulation quality and platform reliability.</li>
@@ -106,7 +106,7 @@ export default function PrivacyPage() {
                         color: "#7a7a7a",
                     }}
                 >
-                    © 2026 AI Business Simulator
+                    © 2026 AI Business Decision Simulation
                 </p>
             </footer>
         </div>
